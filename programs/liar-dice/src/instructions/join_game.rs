@@ -9,7 +9,10 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
     let game = &mut ctx.accounts.game;
 
     // Game must be open, not full, and you must not already be in it.
-    require!(game.status == GameStatus::Waiting, LiarDiceError::BadGameState);
+    require!(
+        game.status == GameStatus::Waiting,
+        LiarDiceError::BadGameState
+    );
     require!(game.players.len() < MAX_PLAYERS, LiarDiceError::TableFull);
     require!(
         game.player_index(&ctx.accounts.player.key()).is_none(),
@@ -51,7 +54,10 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
         bump: ctx.bumps.player_hand,
     });
 
-    // Pre-fund the hand PDA with rent for its ephemeral permission, spent later on the ER by `init_hand_permission`.
+    // Pre-fund the hand PDA with rent for its ephemeral permission. The hand is the
+    // delegated account, so these base-layer lamports travel with it onto the ER and
+    // are spent there (via PDA-signed CPI) when `init_hand_permission` creates the
+    // permission. Without this the ER create fails with "Insufficient Funds For Rent".
     let permission_rent = ephemeral_rollups_sdk::ephemeral_accounts::rent(
         ephemeral_rollups_sdk::access_control::structs::EphemeralPermission::size_of(1) as u32,
     );
@@ -65,6 +71,7 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
         ),
         permission_rent,
     )?;
+
     Ok(())
 }
 
