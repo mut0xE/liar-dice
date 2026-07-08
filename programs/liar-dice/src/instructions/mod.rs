@@ -1,5 +1,7 @@
+pub mod begin_bidding;
 pub mod cancel_game;
 pub mod challenge;
+pub mod close_hand;
 pub mod consume_roll;
 pub mod create_game;
 pub mod delegate;
@@ -13,8 +15,10 @@ pub mod reveal;
 pub mod settle_round;
 pub mod start_game;
 
+pub use begin_bidding::*;
 pub use cancel_game::*;
 pub use challenge::*;
+pub use close_hand::*;
 pub use consume_roll::*;
 pub use create_game::*;
 pub use delegate::*;
