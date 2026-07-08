@@ -47,11 +47,12 @@ pub fn validate_bid(new: &Bid, prev: &Option<Bid>, total_dice: u32) -> Result<()
     Ok(())
 }
 
-/// Next active (non-eliminated) player index, wrapping around the table.
-pub fn next_active_player(g: &Game, from: u8) -> u8 {
+/// Next player who rolled for THIS round (participating), wrapping around the table.
+/// Only call when at least one seat is participating, or it would loop forever.
+pub fn next_participating_player(g: &Game, from: u8) -> u8 {
     let n = g.players.len() as u8;
     let mut i = (from + 1) % n;
-    while !g.is_active[i as usize] {
+    while !g.participating[i as usize] {
         i = (i + 1) % n;
     }
     i

@@ -2,6 +2,9 @@ use anchor_lang::prelude::*;
 
 pub const MAX_PLAYERS: usize = 6;
 pub const STARTING_DICE: u8 = 5;
+/// Consecutive rolling phases a player may miss before they're eliminated.
+/// One miss just sits you out that round (skip); the K-th in a row forfeits you.
+pub const MISS_LIMIT: u8 = 2;
 
 pub const GAME_SEED: &[u8] = b"game";
 pub const HAND_SEED: &[u8] = b"hand";
@@ -12,6 +15,17 @@ pub enum GameStatus {
     Waiting,
     Active,
     Ended,
+}
+
+/// Where an Active round is in its lifecycle:
+///   Rolling   — everyone rolls simultaneously (one shared roll window).
+///   Bidding   — turn-based bidding/challenging over the players who rolled.
+///   Revealing — a challenge is open; participants reveal, then `settle_round` scores it.
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
+pub enum RoundPhase {
+    Rolling,
+    Bidding,
+    Revealing,
 }
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -48,8 +62,13 @@ pub struct Game {
     pub entry_fee_lamports: u64,
     /// The prize pot: running total of all entry fees held in the vault.
     pub pot_lamports: u64,
-    /// True from "Liar!" until `settle_round`; while set, only `reveal` is accepted.
-    pub awaiting_reveal: bool,
+    /// Where the current round is: Rolling -> Bidding -> Revealing (see `RoundPhase`).
+    pub phase: RoundPhase,
+    /// Who actually rolled for THIS round (set by `begin_bidding`); only these seats
+    /// bid/reveal/get counted. A skipped (non-rolling) player stays `is_active` but sits out.
+    pub participating: Vec<bool>,
+    /// Consecutive rolling phases each seat has missed; reset on a good roll, eliminated at `MISS_LIMIT`.
+    pub missed_rolls: Vec<u8>,
     /// Seconds a player is given to make the pending move before anyone may `force_timeout` them.
     /// Set once at `create_game`; a real table might use 60-120s.
     pub timeout_grace: i64,
@@ -75,7 +94,9 @@ impl Game {
         + (4 + MAX_PLAYERS * (1 + 5 + 1)) // last_reveal
         + 8           // entry_fee_lamports
         + 8           // pot_lamports
-        + 1           // awaiting_reveal
+        + 1           // phase
+        + (4 + MAX_PLAYERS)      // participating
+        + (4 + MAX_PLAYERS)      // missed_rolls
         + 8           // timeout_grace
         + 8           // action_deadline
         + 1; // bump
@@ -91,6 +112,11 @@ impl Game {
 
     pub fn active_count(&self) -> usize {
         self.is_active.iter().filter(|&&a| a).count()
+    }
+
+    /// How many seats rolled and are in play for the current round.
+    pub fn participating_count(&self) -> usize {
+        self.participating.iter().filter(|&&p| p).count()
     }
 
     pub fn player_index(&self, key: &Pubkey) -> Option<u8> {

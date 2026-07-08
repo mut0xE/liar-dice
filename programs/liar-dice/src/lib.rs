@@ -49,6 +49,11 @@ pub mod liar_dice {
         instructions::cancel_game::cancel_game(ctx)
     }
 
+    /// Reclaim a hand's rent after the game has ended + undelegated
+    pub fn close_hand(ctx: Context<CloseHand>) -> Result<()> {
+        instructions::close_hand::close_hand(ctx)
+    }
+
     /// Request a provably-fair dice roll from the VRF oracle (on the ER).
     pub fn request_roll(ctx: Context<RequestRoll>, client_seed: u8) -> Result<()> {
         instructions::request_roll::request_roll(ctx, client_seed)
@@ -57,6 +62,13 @@ pub mod liar_dice {
     /// VRF callback that writes the rolled dice. Only the VRF program may call it.
     pub fn consume_roll(ctx: Context<ConsumeRoll>, randomness: [u8; 32]) -> Result<()> {
         instructions::consume_roll::consume_roll(ctx, randomness)
+    }
+
+    /// Close the shared roll window and open bidding (permissionless; active hands via remaining_accounts).
+    pub fn begin_bidding<'info>(
+        ctx: Context<'_, '_, 'info, 'info, BeginBidding<'info>>,
+    ) -> Result<()> {
+        instructions::begin_bidding::begin_bidding(ctx)
     }
 
     pub fn place_bid(ctx: Context<PlaceBid>, quantity: u16, face: u8) -> Result<()> {
