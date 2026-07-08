@@ -1,15 +1,11 @@
 use anchor_lang::prelude::*;
 
-/// Max players at a table.
 pub const MAX_PLAYERS: usize = 6;
-/// Starting dice per player.
 pub const STARTING_DICE: u8 = 5;
 
-// PDA seed prefixes.
 pub const GAME_SEED: &[u8] = b"game";
 pub const HAND_SEED: &[u8] = b"hand";
 pub const VAULT_SEED: &[u8] = b"vault";
-pub const TREASURY_SEED: &[u8] = b"treasury";
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub enum GameStatus {
@@ -21,13 +17,10 @@ pub enum GameStatus {
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Bid {
     pub quantity: u16,
-    pub face: u8,   // 1..=6
-    pub bidder: u8, // index into players
+    pub face: u8,
+    pub bidder: u8,
 }
 
-/// Snapshot of a revealed hand, written into the shared `Game` after a challenge
-/// so every player at the table can audit the outcome (PlayerHand is owner-only
-/// readable). Cleared at the start of the next round.
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Reveal {
     pub player_idx: u8,
@@ -40,55 +33,81 @@ pub struct Game {
     pub host: Pubkey,
     pub game_id: u64,
     pub status: GameStatus,
-    pub players: Vec<Pubkey>,   // max MAX_PLAYERS
-    pub dice_counts: Vec<u8>,   // public dice remaining per player
-    pub is_active: Vec<bool>,   // false = eliminated
-    pub current_turn: u8,       // index into players
+    pub players: Vec<Pubkey>,
+    pub dice_counts: Vec<u8>,
+    pub is_active: Vec<bool>,
+    pub current_turn: u8,
     pub round: u16,
-    pub current_bid: Option<Bid>, // None = first bid of round
-    pub last_loser: u8,           // bids first next round
-    pub last_reveal: Vec<Reveal>, // revealed dice after a challenge; cleared next round
-    pub stake_lamports: u64,      // prize stake per player -> vault (winner takes it)
-    pub entry_fee_lamports: u64,  // protocol fee per player -> treasury
-    pub pot_lamports: u64,        // sum of stakes = the prize
+    pub current_bid: Option<Bid>,
+    pub last_loser: u8,
+    /// Seat index of the player who called "Liar!" on the current bid.
+    pub challenger: u8,
+    /// Each active player's dice for the challenged round, filled by their own `reveal` call.
+    pub last_reveal: Vec<Reveal>,
+    /// The buy-in each player pays once on join.
+    pub entry_fee_lamports: u64,
+    /// The prize pot: running total of all entry fees held in the vault.
+    pub pot_lamports: u64,
+    /// True from "Liar!" until `settle_round`; while set, only `reveal` is accepted.
+    pub awaiting_reveal: bool,
+    /// Seconds a player is given to make the pending move before anyone may `force_timeout` them.
+    /// Set once at `create_game`; a real table might use 60-120s.
+    pub timeout_grace: i64,
+    /// Unix timestamp by which the currently-owed action must happen, else `force_timeout` can fire.
+    /// 0 means nothing is pending (game not started, or ended).
+    pub action_deadline: i64,
     pub bump: u8,
 }
 
 impl Game {
-    // 8 disc + host(32) + game_id(8) + status(1)
-    //   + players Vec<Pubkey>(4 + 32*6)
-    //   + dice_counts Vec<u8>(4 + 6)
-    //   + is_active Vec<bool>(4 + 6)
-    //   + current_turn(1) + round(2)
-    //   + current_bid Option<Bid>(1 + 4)
-    //   + last_loser(1)
-    //   + last_reveal Vec<Reveal>(4 + 6*(1+5+1))
-    //   + stake(8) + entry_fee(8) + pot(8) + bump(1)
     pub const SPACE: usize = 8
-        + 32
-        + 8
-        + 1
-        + (4 + 32 * MAX_PLAYERS)
-        + (4 + MAX_PLAYERS)
-        + (4 + MAX_PLAYERS)
-        + 1
-        + 2
-        + (1 + 4)
-        + 1
-        + (4 + MAX_PLAYERS * (1 + 5 + 1))
-        + 8
-        + 8
-        + 8
-        + 1;
+        + 32          // host
+        + 8           // game_id
+        + 1           // status
+        + (4 + 32 * MAX_PLAYERS) // players
+        + (4 + MAX_PLAYERS)      // dice_counts
+        + (4 + MAX_PLAYERS)      // is_active
+        + 1           // current_turn
+        + 2           // round
+        + (1 + 4)     // current_bid
+        + 1           // last_loser
+        + 1           // challenger
+        + (4 + MAX_PLAYERS * (1 + 5 + 1)) // last_reveal
+        + 8           // entry_fee_lamports
+        + 8           // pot_lamports
+        + 1           // awaiting_reveal
+        + 8           // timeout_grace
+        + 8           // action_deadline
+        + 1; // bump
 
-    /// Total dice currently in play across all players.
+    /// Arm the deadline for the next owed action, `timeout_grace` seconds out from `now`.
+    pub fn arm_deadline(&mut self, now: i64) {
+        self.action_deadline = now.saturating_add(self.timeout_grace);
+    }
+
     pub fn total_dice(&self) -> u32 {
         self.dice_counts.iter().map(|&d| d as u32).sum()
     }
 
-    /// Number of players still holding dice.
     pub fn active_count(&self) -> usize {
         self.is_active.iter().filter(|&&a| a).count()
+    }
+
+    pub fn player_index(&self, key: &Pubkey) -> Option<u8> {
+        self.players.iter().position(|p| p == key).map(|i| i as u8)
+    }
+
+    pub fn winner_index(&self) -> Option<u8> {
+        let mut found = None;
+        for (i, &active) in self.is_active.iter().enumerate() {
+            if active {
+                if found.is_some() {
+                    return None;
+                }
+                found = Some(i as u8);
+            }
+        }
+        found
     }
 }
 
@@ -96,15 +115,16 @@ impl Game {
 pub struct PlayerHand {
     pub game: Pubkey,
     pub player: Pubkey,
-    pub dice: [u8; 5], // valid entries 0..dice_count
+    pub dice: [u8; 5],
     pub dice_count: u8,
-    pub rolled: bool, // set true by VRF callback; gate bids on this
+    pub rolled: bool,
     pub revealed: bool,
+    /// The `Game.round` these dice were rolled for, so `request_roll` allows only one roll per round.
+    pub rolled_round: u16,
     pub bump: u8,
 }
 
 impl PlayerHand {
-    // 8 disc + game(32) + player(32) + dice(5) + dice_count(1)
-    //   + rolled(1) + revealed(1) + bump(1)
-    pub const SPACE: usize = 8 + 32 + 32 + 5 + 1 + 1 + 1 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 5 + 1 + 1 + 1 + 2 + 1;
 }
+

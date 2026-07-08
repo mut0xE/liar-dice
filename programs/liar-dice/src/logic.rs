@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::LiarDiceError;
-use crate::state::{Bid, Game, PlayerHand};
+use crate::state::{Bid, Game, PlayerHand, Reveal};
 
 /// Bids only go up: higher quantity, or same quantity + higher face.
 pub fn is_higher_bid(new: &Bid, prev: &Bid) -> bool {
@@ -15,6 +15,19 @@ pub fn count_face(hands: &[&PlayerHand], face: u8) -> u32 {
     let mut total = 0;
     for h in hands {
         for &die in h.dice.iter().take(h.dice_count as usize) {
+            if die == face || (die == 1 && face != 1) {
+                total += 1;
+            }
+        }
+    }
+    total
+}
+
+/// Same as `count_face` but over the public `Reveal` table, so no private hand is read.
+pub fn count_face_reveals(reveals: &[Reveal], face: u8) -> u32 {
+    let mut total = 0;
+    for r in reveals {
+        for &die in r.dice.iter().take(r.dice_count as usize) {
             if die == face || (die == 1 && face != 1) {
                 total += 1;
             }
@@ -60,6 +73,7 @@ mod tests {
             dice_count,
             rolled: true,
             revealed: false,
+            rolled_round: 0,
             bump: 0,
         }
     }
@@ -124,6 +138,28 @@ mod tests {
     #[test]
     fn validate_bid_rejects_not_higher() {
         assert!(validate_bid(&bid(2, 3, 0), &Some(bid(2, 4, 0)), 10).is_err());
+    }
+
+    fn reveal(player_idx: u8, dice: [u8; 5], dice_count: u8) -> Reveal {
+        Reveal { player_idx, dice, dice_count }
+    }
+
+    #[test]
+    fn count_face_reveals_matches_hand_count() {
+        // Two players: 5,1,3,1,2 and 6,6,1,4,4 -> count fours.
+        // p0: one wild 1 twice = 2 ; p1: two 4s + one wild 1 = 3 -> total 5.
+        let reveals = [
+            reveal(0, [5, 1, 3, 1, 2], 5),
+            reveal(1, [6, 6, 1, 4, 4], 5),
+        ];
+        assert_eq!(count_face_reveals(&reveals, 4), 5);
+    }
+
+    #[test]
+    fn count_face_reveals_ones_not_wild_and_respects_count() {
+        // Counting ones across a partial hand: only first 3 dice, ones not wild.
+        let reveals = [reveal(0, [1, 1, 6, 1, 1], 3)];
+        assert_eq!(count_face_reveals(&reveals, 1), 2);
     }
 
     #[test]

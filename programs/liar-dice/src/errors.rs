@@ -32,4 +32,20 @@ pub enum LiarDiceError {
     Unauthorized,
     #[msg("Arithmetic overflow")]
     Overflow,
+    #[msg("A required player hand was not provided")]
+    MissingHand,
+    #[msg("Duplicate hand provided")]
+    DuplicateHand,
+    #[msg("Game does not have a single winner yet")]
+    NoWinner,
+    #[msg("No settled round to process")]
+    NotSettled,
+    #[msg("Dice already rolled for this round")]
+    AlreadyRolled,
+    #[msg("Timeout grace must be > 0")]
+    InvalidTimeout,
+    #[msg("The action deadline has not passed yet")]
+    DeadlineNotReached,
+    #[msg("Target player is not the one holding up the game")]
+    NotStalling,
 }
