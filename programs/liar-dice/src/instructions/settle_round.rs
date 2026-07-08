@@ -1,28 +1,35 @@
 use anchor_lang::prelude::*;
+use session_keys::{session_auth_or, Session, SessionError, SessionTokenV2};
 
 use crate::errors::LiarDiceError;
-use crate::logic::{count_face_reveals, next_active_player};
+use crate::logic::count_face_reveals;
 use crate::state::*;
 
-/// Resolve a challenge once every active player has revealed, counting over the public `last_reveal`.
+/// Resolve a challenge once every participating player has revealed, counting over the public `last_reveal`.
 /// If the count meets the claim the bid holds (challenger loses a die); otherwise the bidder loses one.
+/// Caller-agnostic (anyone may settle); supports session keys so the session signer can trigger it.
+#[session_auth_or(
+    ctx.accounts.authority.key() == ctx.accounts.signer.key(),
+    LiarDiceError::Unauthorized
+)]
 pub fn settle_round(ctx: Context<SettleRound>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let game = &mut ctx.accounts.game;
     require!(game.status == GameStatus::Active, LiarDiceError::BadGameState);
-    require!(game.awaiting_reveal, LiarDiceError::NotSettled);
+    require!(game.phase == RoundPhase::Revealing, LiarDiceError::NotSettled);
 
     // Strict path: everyone revealed, settle immediately. Timeout path: reveals are
-    // missing but the deadline has passed, so slash every active player who failed to
+    // missing but the deadline has passed, so slash every participant who failed to
     // reveal and settle the bid over whoever did.
-    let all_revealed = game.last_reveal.len() == game.active_count();
+    let all_revealed = game.last_reveal.len() == game.participating_count();
     if !all_revealed {
         require!(game.action_deadline != 0, LiarDiceError::BadGameState);
         require!(now > game.action_deadline, LiarDiceError::DeadlineNotReached);
 
         let revealed: Vec<u8> = game.last_reveal.iter().map(|r| r.player_idx).collect();
         for idx in 0..game.players.len() {
-            if game.is_active[idx] && !revealed.contains(&(idx as u8)) {
+            // Only participants owe a reveal; a skipped (non-rolling) player is exempt.
+            if game.participating[idx] && !revealed.contains(&(idx as u8)) {
                 // Non-revealer loses a die (their dice also never counted toward the bid),
                 // and is eliminated if that was their last one.
                 if game.dice_counts[idx] > 0 {
@@ -52,30 +59,38 @@ pub fn settle_round(ctx: Context<SettleRound>) -> Result<()> {
         }
     }
 
-    game.awaiting_reveal = false;
-
     if game.active_count() <= 1 {
         game.status = GameStatus::Ended;
         game.action_deadline = 0; // nothing is owed once the game is over
     } else {
+        // Next round reopens in the Rolling phase; begin_bidding seats the starter
+        // later (using last_loser as the seed seat) once everyone has rolled.
         game.round += 1;
+        game.phase = RoundPhase::Rolling;
         game.current_bid = None;
         game.last_reveal.clear();
-        // The loser starts the next round, or the next active player if they were just eliminated.
-        game.current_turn = if game.is_active[game.last_loser as usize] {
-            game.last_loser
-        } else {
-            next_active_player(game, game.last_loser)
-        };
-        // The next round's first mover owes a move; start their clock.
+        for p in game.participating.iter_mut() {
+            *p = false;
+        }
+        // Everyone owes a roll again; start the shared roll window.
         game.arm_deadline(now);
     }
     Ok(())
 }
 
-#[derive(Accounts)]
+#[derive(Accounts, Session)]
 pub struct SettleRound<'info> {
-    pub caller: Signer<'info>,
+    /// The tx signer: any wallet OR an authorized session key.
+    pub signer: Signer<'info>,
+
+    /// The seat owner (real wallet) the signer acts for. Not a signer.
+    /// CHECK: identity only; authorization is enforced by `session_auth_or`.
+    pub authority: UncheckedAccount<'info>,
+
+    /// Optional session token proving `signer` may act for `authority`.
+    #[session(signer = signer, authority = authority.key())]
+    pub session_token: Option<Account<'info, SessionTokenV2>>,
+
     #[account(mut)]
     pub game: Account<'info, Game>,
 }

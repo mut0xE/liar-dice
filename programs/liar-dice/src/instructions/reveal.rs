@@ -5,7 +5,7 @@ use crate::errors::LiarDiceError;
 use crate::state::*;
 
 /// Publish your own hand after a challenge: copy the private dice into the public `Game.last_reveal`.
-/// Each active player calls this once while `awaiting_reveal` is set, then `settle_round` counts.
+/// Each participating player calls this once while the round is in the `Revealing` phase, then `settle_round` counts.
 /// Supports session keys; the hand and seat are resolved from `authority`.
 #[session_auth_or(
     ctx.accounts.authority.key() == ctx.accounts.signer.key(),
@@ -16,7 +16,7 @@ pub fn reveal(ctx: Context<Reveal_>) -> Result<()> {
     let hand = &mut ctx.accounts.player_hand;
 
     require!(game.status == GameStatus::Active, LiarDiceError::BadGameState);
-    require!(game.awaiting_reveal, LiarDiceError::BadGameState);
+    require!(game.phase == RoundPhase::Revealing, LiarDiceError::BadGameState);
     // Must have rolled FOR THIS ROUND; the round check blocks revealing stale dice.
     require!(
         hand.rolled && hand.rolled_round == game.round,

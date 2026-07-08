@@ -31,7 +31,9 @@ pub fn create_game(
         last_reveal: Vec::new(),
         entry_fee_lamports: entry_fee,
         pot_lamports: 0, // grows as players join
-        awaiting_reveal: false,
+        phase: RoundPhase::Rolling, // meaningful only once Active
+        participating: Vec::new(),
+        missed_rolls: Vec::new(),
         timeout_grace,
         action_deadline: 0, // armed once the game starts
         bump: ctx.bumps.game,

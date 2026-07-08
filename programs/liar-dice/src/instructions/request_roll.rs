@@ -22,8 +22,8 @@ pub fn request_roll(ctx: Context<RequestRoll>, client_seed: u8) -> Result<()> {
         game.status == GameStatus::Active,
         LiarDiceError::BadGameState
     );
-    // Can't roll mid-reveal, or a player could change the hand they're about to reveal.
-    require!(!game.awaiting_reveal, LiarDiceError::BadGameState);
+    // Rolling only happens during the shared roll window, before bidding opens.
+    require!(game.phase == RoundPhase::Rolling, LiarDiceError::BadGameState);
 
     // Resolve the seat by authority (not the raw signer).
     let idx = game
@@ -38,15 +38,14 @@ pub fn request_roll(ctx: Context<RequestRoll>, client_seed: u8) -> Result<()> {
     // Exactly one roll per round, so a player can't re-roll to change their hand.
     require!(hand_rolled_round < round, LiarDiceError::AlreadyRolled);
 
-    let now = Clock::get()?.unix_timestamp;
     let hand = &mut ctx.accounts.player_hand;
     hand.dice_count = dice_count;
     hand.rolled_round = round;
     // Mark pending: no bidding until the callback lands.
     hand.rolled = false;
 
-    // Rolling counts as making your move on time; rearm for the bid that follows.
-    ctx.accounts.game.arm_deadline(now);
+    // Note: the roll window is shared and armed once at round start, so a single
+    // player's roll must NOT re-arm it (that would let the window drift forever).
 
     let ix = create_request_scoped_randomness_ix(RequestRandomnessParams {
         payer: ctx.accounts.signer.key(),

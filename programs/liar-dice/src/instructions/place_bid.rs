@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use session_keys::{session_auth_or, Session, SessionError, SessionTokenV2};
 
 use crate::errors::LiarDiceError;
-use crate::logic::{next_active_player, validate_bid};
+use crate::logic::{next_participating_player, validate_bid};
 use crate::state::*;
 
 /// Raise the standing bid on your turn (a claim about ALL dice on the table, e.g. "five 4s").
@@ -15,8 +15,8 @@ use crate::state::*;
 pub fn place_bid(ctx: Context<PlaceBid>, quantity: u16, face: u8) -> Result<()> {
     let game = &mut ctx.accounts.game;
     require!(game.status == GameStatus::Active, LiarDiceError::BadGameState);
-    // No bidding once "Liar!" has frozen the round, or the challenge could be dodged.
-    require!(!game.awaiting_reveal, LiarDiceError::BadGameState);
+    // Bidding is only open in the Bidding phase (after rolls, before a challenge freezes it).
+    require!(game.phase == RoundPhase::Bidding, LiarDiceError::BadGameState);
 
     // Resolve the seat by authority (not the signer); a non-player has no index.
     let bidder = game
@@ -38,9 +38,9 @@ pub fn place_bid(ctx: Context<PlaceBid>, quantity: u16, face: u8) -> Result<()> 
     // Validate face/quantity and that it's strictly higher than the current bid.
     validate_bid(&bid, &game.current_bid, game.total_dice())?;
 
-    // Commit the bid and pass the turn to the next active player.
+    // Commit the bid and pass the turn to the next participant.
     game.current_bid = Some(bid);
-    game.current_turn = next_active_player(game, game.current_turn);
+    game.current_turn = next_participating_player(game, game.current_turn);
     // The next player now owes a bid-or-challenge; start their clock.
     game.arm_deadline(Clock::get()?.unix_timestamp);
     Ok(())

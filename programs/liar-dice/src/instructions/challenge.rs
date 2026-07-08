@@ -5,7 +5,7 @@ use crate::errors::LiarDiceError;
 use crate::state::*;
 
 /// Call "Liar!" on the standing bid. Can't count dice directly (private hands), so it just
-/// freezes the round into `awaiting_reveal`; players then `reveal` and `settle_round` counts.
+/// freezes the round into the `Revealing` phase; players then `reveal` and `settle_round` counts.
 /// Supports session keys; the seat is resolved from `authority`.
 #[session_auth_or(
     ctx.accounts.authority.key() == ctx.accounts.signer.key(),
@@ -13,11 +13,20 @@ use crate::state::*;
 )]
 pub fn challenge(ctx: Context<Challenge>) -> Result<()> {
     let game = &mut ctx.accounts.game;
-    require!(game.status == GameStatus::Active, LiarDiceError::BadGameState);
-    require!(!game.awaiting_reveal, LiarDiceError::BadGameState);
+    require!(
+        game.status == GameStatus::Active,
+        LiarDiceError::BadGameState
+    );
+    require!(
+        game.phase == RoundPhase::Bidding,
+        LiarDiceError::BadGameState
+    );
 
     // There must be a standing bid to challenge.
-    require!(game.current_bid.is_some(), LiarDiceError::NothingToChallenge);
+    require!(
+        game.current_bid.is_some(),
+        LiarDiceError::NothingToChallenge
+    );
 
     // Only the player whose turn it is may challenge (resolved by authority).
     let challenger = game
@@ -28,8 +37,8 @@ pub fn challenge(ctx: Context<Challenge>) -> Result<()> {
     // Freeze the round for reveals, keeping `current_bid` so `settle_round` knows what's challenged.
     game.challenger = challenger;
     game.last_reveal.clear();
-    game.awaiting_reveal = true;
-    // All active players now owe a reveal; start the reveal clock.
+    game.phase = RoundPhase::Revealing;
+    // All participating players now owe a reveal; start the reveal clock.
     game.arm_deadline(Clock::get()?.unix_timestamp);
     Ok(())
 }

@@ -41,6 +41,8 @@ pub fn join_game(ctx: Context<JoinGame>) -> Result<()> {
     game.players.push(ctx.accounts.player.key());
     game.dice_counts.push(STARTING_DICE);
     game.is_active.push(true);
+    game.participating.push(false); // set per round by begin_bidding
+    game.missed_rolls.push(0);
 
     // Initialize the player's private hand with a full set of dice, unrolled.
     ctx.accounts.player_hand.set_inner(PlayerHand {

@@ -8,11 +8,17 @@ use crate::state::*;
 /// Pass every player's wallet in `remaining_accounts` in the same order as game.players.
 pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) -> Result<()> {
     let game = &mut ctx.accounts.game;
-    require!(game.status == GameStatus::Waiting, LiarDiceError::BadGameState);
+    require!(
+        game.status == GameStatus::Waiting,
+        LiarDiceError::BadGameState
+    );
 
     let player_count = game.players.len();
+    // Two accounts per player, in game.players order: the wallet (refund destination)
+    // and that player's hand PDA (closed here). The game is Waiting, so hands were
+    // never delegated — this is a plain base-layer close, no ER/undelegation involved.
     require!(
-        ctx.remaining_accounts.len() == player_count,
+        ctx.remaining_accounts.len() == player_count * 2,
         LiarDiceError::MissingHand
     );
 
@@ -24,13 +30,28 @@ pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) ->
     let refund_per_player = game.entry_fee_lamports;
 
     for player_idx in 0..player_count {
-        let player_account = &ctx.remaining_accounts[player_idx];
+        let player_account = &ctx.remaining_accounts[player_idx * 2];
+        let hand_account = &ctx.remaining_accounts[player_idx * 2 + 1];
+
+        // The wallet must be the seated player.
         require_keys_eq!(
             *player_account.key,
             game.players[player_idx],
             LiarDiceError::Unauthorized
         );
 
+        // The hand must be that player's canonical PDA for this game.
+        let (expected_hand, _) = Pubkey::find_program_address(
+            &[HAND_SEED, game_key.as_ref(), player_account.key.as_ref()],
+            &crate::ID,
+        );
+        require_keys_eq!(
+            *hand_account.key,
+            expected_hand,
+            LiarDiceError::Unauthorized
+        );
+
+        // Refund the entry fee from the vault.
         if refund_per_player > 0 {
             system_program::transfer(
                 CpiContext::new_with_signer(
@@ -44,6 +65,19 @@ pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) ->
                 refund_per_player,
             )?;
         }
+
+        require!(
+            hand_account.owner == &crate::ID,
+            LiarDiceError::Unauthorized
+        );
+
+        let hand_lamports = hand_account.lamports();
+        let player_lamports = player_account.lamports();
+        **player_account.try_borrow_mut_lamports()? = player_lamports
+            .checked_add(hand_lamports)
+            .ok_or(LiarDiceError::Overflow)?;
+        **hand_account.try_borrow_mut_lamports()? = 0;
+        hand_account.try_borrow_mut_data()?.fill(0);
     }
 
     game.pot_lamports = 0;

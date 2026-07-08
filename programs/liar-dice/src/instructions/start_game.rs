@@ -4,7 +4,8 @@ use crate::errors::LiarDiceError;
 use crate::state::*;
 
 /// Host-only: move a `Waiting` table into play. Requires at least two players.
-/// Flips the game to `Active`, opens round 1, and gives seat 0 the first move.
+/// Flips the game to `Active` and opens round 1 in the Rolling phase: every player
+/// must roll within one shared window, then `begin_bidding` opens the bidding.
 pub fn start_game(ctx: Context<StartGame>) -> Result<()> {
     let game = &mut ctx.accounts.game;
 
@@ -14,8 +15,8 @@ pub fn start_game(ctx: Context<StartGame>) -> Result<()> {
 
     game.status = GameStatus::Active;
     game.round = 1;
-    game.current_turn = 0;
-    // Seat 0 now owes the first move (roll -> bid); start their clock.
+    game.phase = RoundPhase::Rolling;
+    // Everyone now owes a roll; start the shared roll window.
     game.arm_deadline(Clock::get()?.unix_timestamp);
     Ok(())
 }
