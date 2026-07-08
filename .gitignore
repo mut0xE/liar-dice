@@ -6,6 +6,7 @@ node_modules
 test-ledger
 .yarn
 
-docs
+# Working notes stay local; the polished architecture docs are committed.
+**/docs
 .claude
 CLAUDE.md
