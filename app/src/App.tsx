@@ -6,6 +6,7 @@ import { Lobby } from "./screens/Lobby";
 import { EnterRollup } from "./screens/EnterRollup";
 import { Roll } from "./screens/Roll";
 import { Table } from "./screens/Table";
+import { Reveal } from "./screens/Reveal";
 import { GameSummary } from "./chain/games";
 import { handPda } from "./chain/pdas";
 import { useAnchorWallet } from "./wallet/useAnchorWallet";
@@ -13,7 +14,7 @@ import { useAnchorWallet } from "./wallet/useAnchorWallet";
 type Phase =
   | { name: "lobby" }
   | { name: "enter"; game: GameSummary }
-  | { name: "play"; game: GameSummary; session: Keypair; sessionToken: PublicKey; fqdn: string; validatorIdentity: PublicKey; sub: "rolling" | "table" | "reveal"; myDice?: number[] };
+  | { name: "play"; game: GameSummary; session: Keypair; sessionToken: PublicKey; fqdn: string; validatorIdentity: PublicKey; sub: "rolling" | "table" | "reveal" | "gameover"; myDice?: number[] };
 
 export function App() {
   const { connected } = useWallet();
@@ -52,5 +53,21 @@ export function App() {
       />
     );
   if (phase.name === "play" && phase.sub === "reveal")
-    return <div className="screen center">Revealing… (Task 7)</div>;
+    return (
+      <Reveal
+        game={phase.game.pubkey}
+        session={phase.session}
+        sessionToken={phase.sessionToken}
+        fqdn={phase.fqdn}
+        onDone={(ended) => {
+          if (ended) {
+            setPhase({ ...phase, sub: "gameover" });
+          } else {
+            setPhase({ ...phase, sub: "rolling", myDice: undefined });
+          }
+        }}
+      />
+    );
+  if (phase.name === "play" && phase.sub === "gameover")
+    return <div className="screen center">Game Over (Task 8)</div>;
 }
