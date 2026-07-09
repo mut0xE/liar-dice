@@ -20,6 +20,8 @@ export function Reveal({
   const { signMessage, publicKey } = useWallet();
   const { game: g } = useGameState(fqdn, game);
   const [status, setStatus] = useState("Revealing your dice…");
+  const [settleError, setSettleError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const revealed = useRef(false);
 
   const s = { sessionSigner: session, authority: wallet!.publicKey, sessionToken };
@@ -42,13 +44,22 @@ export function Reveal({
 
   // once everyone has revealed, anyone may settle
   const settle = async () => {
+    setSettleError(null);
+    setBusy(true);
     setStatus("Settling…");
-    const { conn, program } = await withProgram();
-    const tx = await buildSettleRound(program, s, { game });
-    await sendSessionTx(conn, tx.sessionSigner, tx.tx);
-    const fresh: any = await program.account.game.fetch(game);
-    const ended = Object.keys(fresh.status)[0] === "ended";
-    onDone(ended);
+    try {
+      const { conn, program } = await withProgram();
+      const tx = await buildSettleRound(program, s, { game });
+      await sendSessionTx(conn, tx.sessionSigner, tx.tx);
+      const fresh: any = await program.account.game.fetch(game);
+      const ended = Object.keys(fresh.status)[0] === "ended";
+      onDone(ended);
+    } catch (e) {
+      setSettleError((e as Error).message ?? String(e));
+      setStatus("Settling failed — try again.");
+    } finally {
+      setBusy(false);
+    }
   };
 
   const reveals = g?.lastReveal ?? [];
@@ -61,7 +72,8 @@ export function Reveal({
           {(r.dice as number[]).slice(0, r.diceCount).map((d, j) => <Dice key={j} value={d} delay={j * 80} />)}
         </div>
       ))}
-      <button className="btn" onClick={settle}>Settle round</button>
+      {settleError && <div className="tx-error">{settleError}</div>}
+      <button className="btn" onClick={settle} disabled={busy}>Settle round</button>
     </main>
   );
 }

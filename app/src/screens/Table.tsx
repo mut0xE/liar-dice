@@ -21,6 +21,7 @@ export function Table({
   const [qty, setQty] = useState(1);
   const [face, setFace] = useState(2);
   const [err, setErr] = useState<string | null>(null);
+  const [txError, setTxError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   const prevBid = useMemo(() => {
@@ -48,7 +49,7 @@ export function Table({
   const bid = async () => {
     const v = validateBid(prevBid, { quantity: qty, face });
     if (!v.ok) { setErr(v.reason); return; }
-    setErr(null); setBusy(true);
+    setErr(null); setTxError(null); setBusy(true);
     try {
       const { conn, program } = await withProgram();
       const hand = handPda(game, wallet!.publicKey);
@@ -59,16 +60,20 @@ export function Table({
         : await buildPlaceBid(program, s, { game, playerHand: hand, quantity: qty, face });
       await sendSessionTx(conn, tx.sessionSigner, tx.tx);
       navigator.vibrate?.(30);
+    } catch (e) {
+      setTxError((e as Error).message ?? String(e));
     } finally { setBusy(false); }
   };
 
   const challenge = async () => {
-    setBusy(true);
+    setTxError(null); setBusy(true);
     try {
       const { conn, program } = await withProgram();
       const tx = await buildChallenge(program, s, { game });
       await sendSessionTx(conn, tx.sessionSigner, tx.tx);
       navigator.vibrate?.(60);
+    } catch (e) {
+      setTxError((e as Error).message ?? String(e));
     } finally { setBusy(false); }
   };
 
@@ -89,6 +94,7 @@ export function Table({
             <label>Face <input type="number" min={1} max={6} value={face} onChange={(e) => setFace(+e.target.value)} /></label>
           </div>
           {err && <div className="muted">{err}</div>}
+          {txError && <div className="tx-error">{txError}</div>}
           <button className="btn" onClick={bid} disabled={busy}>Raise</button>
           {prevBid && <button className="btn" onClick={challenge} disabled={busy}>Liar! (Challenge)</button>}
         </>

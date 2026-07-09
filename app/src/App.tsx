@@ -7,6 +7,7 @@ import { EnterRollup } from "./screens/EnterRollup";
 import { Roll } from "./screens/Roll";
 import { Table } from "./screens/Table";
 import { Reveal } from "./screens/Reveal";
+import { GameOver } from "./screens/GameOver";
 import { GameSummary } from "./chain/games";
 import { handPda } from "./chain/pdas";
 import { useAnchorWallet } from "./wallet/useAnchorWallet";
@@ -69,5 +70,11 @@ export function App() {
       />
     );
   if (phase.name === "play" && phase.sub === "gameover")
-    return <div className="screen center">Game Over (Task 8)</div>;
+    return (
+      <GameOver
+        game={phase.game.pubkey}
+        fqdn={phase.fqdn}
+        onPlayAgain={() => setPhase({ name: "lobby" })}
+      />
+    );
 }
