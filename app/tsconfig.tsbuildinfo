@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/polyfills.ts","./src/chain/constants.ts","./src/idl/liar_dice.ts","./src/screens/connect.tsx","./src/wallet/walletprovider.tsx","./src/wallet/useanchorwallet.ts"],"version":"5.9.3"}
