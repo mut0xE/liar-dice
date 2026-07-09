@@ -5,6 +5,7 @@ import { Connect } from "./screens/Connect";
 import { Lobby } from "./screens/Lobby";
 import { EnterRollup } from "./screens/EnterRollup";
 import { Roll } from "./screens/Roll";
+import { Table } from "./screens/Table";
 import { GameSummary } from "./chain/games";
 import { handPda } from "./chain/pdas";
 import { useAnchorWallet } from "./wallet/useAnchorWallet";
@@ -12,7 +13,7 @@ import { useAnchorWallet } from "./wallet/useAnchorWallet";
 type Phase =
   | { name: "lobby" }
   | { name: "enter"; game: GameSummary }
-  | { name: "play"; game: GameSummary; session: Keypair; sessionToken: PublicKey; fqdn: string; validatorIdentity: PublicKey; rolled?: boolean };
+  | { name: "play"; game: GameSummary; session: Keypair; sessionToken: PublicKey; fqdn: string; validatorIdentity: PublicKey; sub: "rolling" | "table" | "reveal"; myDice?: number[] };
 
 export function App() {
   const { connected } = useWallet();
@@ -25,10 +26,10 @@ export function App() {
     return (
       <EnterRollup
         game={phase.game}
-        onReady={(r) => setPhase({ name: "play", game: phase.game, ...r })}
+        onReady={(r) => setPhase({ name: "play", game: phase.game, ...r, sub: "rolling" })}
       />
     );
-  if (phase.name === "play" && !phase.rolled)
+  if (phase.name === "play" && phase.sub === "rolling")
     return (
       <Roll
         game={phase.game.pubkey}
@@ -36,9 +37,20 @@ export function App() {
         session={phase.session}
         sessionToken={phase.sessionToken}
         fqdn={phase.fqdn}
-        onRolled={() => setPhase({ ...phase, rolled: true })}
+        onRolled={(dice: number[]) => setPhase({ ...phase, sub: "table", myDice: dice })}
       />
     );
-  if (phase.name === "play" && phase.rolled)
-    return <div className="screen center">At the table (Table screen — Task 6)</div>;
+  if (phase.name === "play" && phase.sub === "table")
+    return (
+      <Table
+        game={phase.game.pubkey}
+        session={phase.session}
+        sessionToken={phase.sessionToken}
+        fqdn={phase.fqdn}
+        myDice={phase.myDice ?? []}
+        onReveal={() => setPhase({ ...phase, sub: "reveal" })}
+      />
+    );
+  if (phase.name === "play" && phase.sub === "reveal")
+    return <div className="screen center">Revealing… (Task 7)</div>;
 }

@@ -12,7 +12,7 @@ import { useWallet } from "@solana/wallet-adapter-react";
 export function Roll({
   game, hand, session, sessionToken, fqdn, onRolled,
 }: {
-  game: PublicKey; hand: PublicKey; session: Keypair; sessionToken: PublicKey; fqdn: string; onRolled: () => void;
+  game: PublicKey; hand: PublicKey; session: Keypair; sessionToken: PublicKey; fqdn: string; onRolled: (dice: number[]) => void;
 }) {
   const wallet = useAnchorWallet();
   const { signMessage, publicKey } = useWallet();
@@ -50,7 +50,7 @@ export function Roll({
           <div className="dice-row">
             {dice.map((d, i) => <Dice key={i} value={d} delay={i * 90} />)}
           </div>
-          <button className="btn" onClick={onRolled}>To the table →</button>
+          <button className="btn" onClick={() => onRolled(dice!)}>To the table →</button>
         </>
       ) : (
         <button className="btn" onClick={roll} disabled={busy}>
