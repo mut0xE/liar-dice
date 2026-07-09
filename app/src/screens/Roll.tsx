@@ -32,10 +32,10 @@ export function Roll({
       );
       await sendSessionTx(conn, sessionSigner, tx);
       navigator.vibrate?.(40);
-      // poll for VRF callback
+      // poll for the VRF callback, stopping as soon as the dice land
       for (let i = 0; i < 40; i++) {
         await new Promise((r) => setTimeout(r, 700));
-        await refresh();
+        if (await refresh()) break;
       }
     } finally {
       setBusy(false);

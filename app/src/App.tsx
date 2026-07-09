@@ -18,7 +18,7 @@ export function App() {
   const { connected } = useWallet();
   const wallet = useAnchorWallet();
   const [phase, setPhase] = useState<Phase>({ name: "lobby" });
-  if (!connected) return <Connect />;
+  if (!connected || !wallet) return <Connect />;
   if (phase.name === "lobby")
     return <Lobby onEnter={(game) => setPhase({ name: "enter", game })} />;
   if (phase.name === "enter")
