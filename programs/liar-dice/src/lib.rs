@@ -11,7 +11,7 @@ use instructions::*;
 pub use logic::*;
 pub use state::*;
 
-declare_id!("F1uoshrHSQh3pEYmT2gQ5p2UBauH75ryvJ3dECtcR8gA");
+declare_id!("4Q9UvCjAeKP8xRBLNoSx3ZCp4vmrGXpKcZ1td3RRbzMN");
 
 #[ephemeral]
 #[program]
