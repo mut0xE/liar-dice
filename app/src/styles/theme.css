@@ -21,3 +21,9 @@ body { background: var(--bg); color: var(--fg); font-family: ui-monospace, monos
 .btn.small { width: auto; padding: 12px 18px; }
 .muted { color: var(--muted); font-size: 0.9rem; }
 .card { background: #14141c; border: 1px solid #22222e; border-radius: 14px; padding: 16px; }
+.dice-row { display: flex; gap: 10px; justify-content: center; }
+.die { width: 56px; height: 56px; background: var(--fg); color: var(--bg); border-radius: 12px;
+  display: grid; grid-template-columns: repeat(3, 1fr); place-items: center; padding: 6px;
+  animation: pop 320ms ease both; }
+.pip { width: 9px; height: 9px; background: var(--bg); border-radius: 50%; }
+@keyframes pop { from { transform: scale(0.4) rotate(-12deg); opacity: 0; } to { transform: scale(1); opacity: 1; } }
