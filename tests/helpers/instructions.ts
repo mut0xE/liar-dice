@@ -162,8 +162,20 @@ export async function buildDelegateAndSession(
   const tx = new Transaction();
   const signers: Keypair[] = [args.player];
 
-  const delegateIx = await program.methods
-    .delegate(args.gameId)
+  // Delegation is now split: delegate_game (shared PDA) + delegate_hand (own hand).
+  // Both are idempotent on-chain (skip if already delegated), so bundling them for
+  // the test's first player mirrors the old combined `delegate`.
+  const delegateGameIx = await program.methods
+    .delegateGame(args.gameId)
+    .accountsPartial({
+      payer: args.player.publicKey,
+      host: args.host,
+      game: args.game,
+      validator: args.validatorIdentity,
+    })
+    .instruction();
+  const delegateHandIx = await program.methods
+    .delegateHand(args.gameId)
     .accountsPartial({
       player: args.player.publicKey,
       host: args.host,
@@ -172,7 +184,7 @@ export async function buildDelegateAndSession(
       validator: args.validatorIdentity,
     })
     .instruction();
-  tx.add(delegateIx);
+  tx.add(delegateGameIx, delegateHandIx);
 
   const sessionToken = sessionTokenPda(
     program.programId,

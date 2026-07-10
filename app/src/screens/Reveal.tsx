@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
-import { authedErConnection } from "../chain/connection";
+import { sessionErConnection } from "../chain/connection";
 import { programOn } from "../chain/program";
 import { handPda } from "../chain/pdas";
 import { buildReveal, buildSettleRound } from "../chain/builders";
@@ -17,30 +17,47 @@ export function Reveal({
   onDone: (ended: boolean) => void;
 }) {
   const wallet = useAnchorWallet();
-  const { signMessage, publicKey } = useWallet();
+  const { publicKey } = useWallet();
   const { game: g } = useGameState(fqdn, game);
   const [status, setStatus] = useState("Revealing your dice…");
   const [settleError, setSettleError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const revealed = useRef(false);
+  const autoSettled = useRef(false);
+
+  // Both fields are on the PUBLIC game account, so unlike the roll phase we CAN
+  // tell client-side when settle will succeed: every participant has revealed, or
+  // the reveal deadline has passed (settle_round then slashes the no-shows).
+  const participatingCount = useMemo(
+    () => (g ? (g.participating as boolean[]).filter(Boolean).length : 0),
+    [g]
+  );
+  const allRevealed = g ? (g.lastReveal?.length ?? 0) >= participatingCount && participatingCount > 0 : false;
+  const deadlinePassed = useMemo(() => {
+    if (!g) return false;
+    const dl = Number(g.actionDeadline);
+    return dl !== 0 && Date.now() / 1000 > dl;
+  }, [g]);
+  const canSettle = allRevealed || deadlinePassed;
 
   const s = { sessionSigner: session, authority: wallet!.publicKey, sessionToken };
+  // Reveal/settle are session-signed → submit via the session key, no wallet popup.
   const withProgram = async () => {
-    const conn = await authedErConnection(fqdn, signMessage!, publicKey!);
+    const conn = await sessionErConnection(fqdn, session);
     return { conn, program: programOn(conn, wallet!) };
   };
 
   // reveal my hand once
   useEffect(() => {
-    if (!wallet || !signMessage || !publicKey || revealed.current) return;
+    if (!wallet || !publicKey || revealed.current) return;
     revealed.current = true;
     (async () => {
       const { conn, program } = await withProgram();
       const tx = await buildReveal(program, s, { game, playerHand: handPda(game, publicKey) });
-      await sendSessionTx(conn, tx.sessionSigner, tx.tx);
+      await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Reveal dice");
       setStatus("Revealed. Waiting for opponents…");
     })().catch((e) => setStatus("Error: " + (e as Error).message));
-  }, [wallet, signMessage, publicKey]);
+  }, [wallet, publicKey]);
 
   // once everyone has revealed, anyone may settle
   const settle = async () => {
@@ -50,7 +67,7 @@ export function Reveal({
     try {
       const { conn, program } = await withProgram();
       const tx = await buildSettleRound(program, s, { game });
-      await sendSessionTx(conn, tx.sessionSigner, tx.tx);
+      await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Settle round");
       const fresh: any = await program.account.game.fetch(game);
       const ended = Object.keys(fresh.status)[0] === "ended";
       onDone(ended);
@@ -61,6 +78,14 @@ export function Reveal({
       setBusy(false);
     }
   };
+
+  // Once everyone has revealed, settle automatically — no need for a human to
+  // click, and it clears the round for the next roll without a stuck screen.
+  useEffect(() => {
+    if (!canSettle || busy || autoSettled.current) return;
+    autoSettled.current = true;
+    settle();
+  }, [canSettle, busy]);
 
   const reveals = g?.lastReveal ?? [];
   return (
@@ -73,7 +98,14 @@ export function Reveal({
         </div>
       ))}
       {settleError && <div className="tx-error">{settleError}</div>}
-      <button className="btn" onClick={settle} disabled={busy}>Settle round</button>
+      {!canSettle && (
+        <div className="muted">
+          Waiting for reveals ({g?.lastReveal?.length ?? 0}/{participatingCount})…
+        </div>
+      )}
+      <button className="btn" onClick={settle} disabled={busy || !canSettle}>
+        {busy ? "Settling…" : "Settle round"}
+      </button>
     </main>
   );
 }

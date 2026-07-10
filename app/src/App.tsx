@@ -1,80 +1,38 @@
 import { useState } from "react";
-import { Keypair, PublicKey } from "@solana/web3.js";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connect } from "./screens/Connect";
 import { Lobby } from "./screens/Lobby";
-import { EnterRollup } from "./screens/EnterRollup";
-import { Roll } from "./screens/Roll";
-import { Table } from "./screens/Table";
-import { Reveal } from "./screens/Reveal";
-import { GameOver } from "./screens/GameOver";
+import { GameTable } from "./screens/GameTable";
 import { GameSummary } from "./chain/games";
-import { handPda } from "./chain/pdas";
 import { useAnchorWallet } from "./wallet/useAnchorWallet";
+import { WalletButton } from "./wallet/WalletButton";
+import { Toaster } from "./ui/Toaster";
 
 type Phase =
   | { name: "lobby" }
-  | { name: "enter"; game: GameSummary }
-  | { name: "play"; game: GameSummary; session: Keypair; sessionToken: PublicKey; fqdn: string; validatorIdentity: PublicKey; sub: "rolling" | "table" | "reveal" | "gameover"; myDice?: number[] };
+  | { name: "play"; game: GameSummary };
 
 export function App() {
   const { connected } = useWallet();
   const wallet = useAnchorWallet();
   const [phase, setPhase] = useState<Phase>({ name: "lobby" });
-  if (!connected || !wallet) return <Connect />;
+  if (!connected || !wallet) return <><Connect /><Toaster /></>;
+
+  const screen = renderScreen();
+  return (
+    <>
+      <header className="app-header">
+        <WalletButton />
+      </header>
+      {screen}
+      <Toaster />
+    </>
+  );
+
+  function renderScreen() {
   if (phase.name === "lobby")
-    return <Lobby onEnter={(game) => setPhase({ name: "enter", game })} />;
-  if (phase.name === "enter")
-    return (
-      <EnterRollup
-        game={phase.game}
-        onReady={(r) => setPhase({ name: "play", game: phase.game, ...r, sub: "rolling" })}
-      />
-    );
-  if (phase.name === "play" && phase.sub === "rolling")
-    return (
-      <Roll
-        game={phase.game.pubkey}
-        hand={handPda(phase.game.pubkey, wallet!.publicKey)}
-        session={phase.session}
-        sessionToken={phase.sessionToken}
-        fqdn={phase.fqdn}
-        onRolled={(dice: number[]) => setPhase({ ...phase, sub: "table", myDice: dice })}
-      />
-    );
-  if (phase.name === "play" && phase.sub === "table")
-    return (
-      <Table
-        game={phase.game.pubkey}
-        session={phase.session}
-        sessionToken={phase.sessionToken}
-        fqdn={phase.fqdn}
-        myDice={phase.myDice ?? []}
-        onReveal={() => setPhase({ ...phase, sub: "reveal" })}
-      />
-    );
-  if (phase.name === "play" && phase.sub === "reveal")
-    return (
-      <Reveal
-        game={phase.game.pubkey}
-        session={phase.session}
-        sessionToken={phase.sessionToken}
-        fqdn={phase.fqdn}
-        onDone={(ended) => {
-          if (ended) {
-            setPhase({ ...phase, sub: "gameover" });
-          } else {
-            setPhase({ ...phase, sub: "rolling", myDice: undefined });
-          }
-        }}
-      />
-    );
-  if (phase.name === "play" && phase.sub === "gameover")
-    return (
-      <GameOver
-        game={phase.game.pubkey}
-        fqdn={phase.fqdn}
-        onPlayAgain={() => setPhase({ name: "lobby" })}
-      />
-    );
+    return <Lobby onEnter={(game) => setPhase({ name: "play", game })} />;
+  if (phase.name === "play")
+    return <GameTable game={phase.game} onExit={() => setPhase({ name: "lobby" })} />;
+  }
 }

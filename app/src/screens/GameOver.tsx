@@ -34,7 +34,7 @@ export function GameOver({ game, fqdn, onPlayAgain }: { game: PublicKey; fqdn: s
         caller: wallet!.publicKey, game, vault: vaultPda(game), winner, handAccounts: hands,
       });
       // end_game runs on the ER; wallet-signed, skipPreflight
-      await sendWalletTx(conn, wallet!, tx, { skipPreflight: true });
+      await sendWalletTx(conn, wallet!, tx, { skipPreflight: true, label: "Pay out winner" });
       setStatus("Paid. Pot sent to winner on base layer.");
     } catch (e) {
       setPayError((e as Error).message ?? String(e));

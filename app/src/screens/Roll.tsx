@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
-import { authedErConnection } from "../chain/connection";
+import { sessionErConnection } from "../chain/connection";
 import { programOn } from "../chain/program";
 import { buildRequestRoll } from "../chain/builders";
 import { sendSessionTx } from "../chain/sendSession";
@@ -23,14 +23,17 @@ export function Roll({
     if (!wallet || !signMessage || !publicKey) return;
     setBusy(true);
     try {
-      const conn = await authedErConnection(fqdn, signMessage, publicKey);
+      // requestRoll is session-signed → submit via the session key, no wallet popup.
+      // (Reading the resulting private dice below still uses wallet auth, gated by
+      // the hand permission — but that token is now cached, so at most one prompt.)
+      const conn = await sessionErConnection(fqdn, session);
       const program = programOn(conn, wallet);
       const { tx, sessionSigner } = await buildRequestRoll(
         program,
         { sessionSigner: session, authority: wallet.publicKey, sessionToken },
         { game, playerHand: hand, clientSeed: Math.floor(Math.random() * 256) }
       );
-      await sendSessionTx(conn, sessionSigner, tx);
+      await sendSessionTx(conn, sessionSigner, tx, "Roll dice");
       navigator.vibrate?.(40);
       // poll for the VRF callback, stopping as soon as the dice land
       for (let i = 0; i < 40; i++) {

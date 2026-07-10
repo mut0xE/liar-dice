@@ -1,35 +1,47 @@
 import { useCallback, useEffect, useState } from "react";
-import { PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { authedErConnection } from "../chain/connection";
+import { authedErConnection, sessionErConnection } from "../chain/connection";
 import { programOn } from "../chain/program";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
 
-export function useMyHand(fqdn: string, hand: PublicKey) {
+export function useMyHand(fqdn: string, hand: PublicKey, session?: Keypair) {
   const wallet = useAnchorWallet();
   const { signMessage, publicKey } = useWallet();
   const [dice, setDice] = useState<number[] | null>(null);
   const [rolled, setRolled] = useState(false);
+  const [rolledRound, setRolledRound] = useState<number | null>(null);
+  const [revealed, setRevealed] = useState(false);
 
   // Returns whether the hand has rolled, so callers can poll and exit early.
-  const refresh = useCallback(async (): Promise<boolean> => {
-    if (!wallet || !signMessage || !publicKey) return false;
-    const conn = await authedErConnection(fqdn, signMessage, publicKey);
-    const program = programOn(conn, wallet);
+  const refresh = useCallback(async (expectedRound?: number): Promise<boolean> => {
+    if (!wallet) return false;
+    const readWith = async (useSession: boolean) => {
+      if (useSession && session) return sessionErConnection(fqdn, session);
+      if (!signMessage || !publicKey) return null;
+      return authedErConnection(fqdn, signMessage, publicKey);
+    };
     try {
+      const conn = await readWith(Boolean(session));
+      if (!conn) return false;
+      const program = programOn(conn, wallet);
       const h = await program.account.playerHand.fetch(hand);
+      const nextRound = Number(h.rolledRound);
       setRolled(h.rolled);
-      setDice(h.rolled ? Array.from(h.dice as number[]).slice(0, h.diceCount) : null);
-      return h.rolled;
+      setRolledRound(nextRound);
+      setRevealed(Boolean(h.revealed));
+      setDice(h.rolled && (expectedRound === undefined || nextRound === expectedRound)
+        ? Array.from(h.dice as number[]).slice(0, h.diceCount)
+        : null);
+      return Boolean(h.rolled && (expectedRound === undefined || nextRound === expectedRound));
     } catch {
-      setRolled(false);
       return false;
     }
-  }, [wallet, signMessage, publicKey, fqdn, hand]);
+  }, [wallet, signMessage, publicKey, fqdn, hand, session]);
 
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  return { dice, rolled, refresh };
+  return { dice, rolled, rolledRound, revealed, refresh };
 }

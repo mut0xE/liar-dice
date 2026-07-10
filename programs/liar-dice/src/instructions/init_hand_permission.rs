@@ -4,6 +4,7 @@ use ephemeral_rollups_sdk::access_control::structs::{
     EphemeralMembersArgs, Member, PERMISSION_SEED, TX_BALANCES_FLAG, TX_LOGS_FLAG, TX_MESSAGE_FLAG,
 };
 use ephemeral_rollups_sdk::consts::{EPHEMERAL_VAULT_ID, MAGIC_PROGRAM_ID, PERMISSION_PROGRAM_ID};
+use session_keys::{session_auth_or, Session, SessionError, SessionTokenV2};
 
 use crate::errors::LiarDiceError;
 use crate::state::*;
@@ -11,6 +12,15 @@ use crate::state::*;
 /// Make the caller's hand private on the ER (once, right after `delegate`).
 /// Creates an owner-only ephemeral permission so opponents can't read the dice.
 /// The hand PDA pays (from rent pre-funded in `join_game`); idempotent if it already exists.
+///
+/// Session-key aware: `signer` may be the player's wallet OR a session key for
+/// `authority`. This lets the frontend submit it over the ER with the session key
+/// (no wallet pop-up / network-mismatch prompt). The permission member is always
+/// resolved from `authority`, never the signer.
+#[session_auth_or(
+    ctx.accounts.authority.key() == ctx.accounts.signer.key(),
+    LiarDiceError::Unauthorized
+)]
 pub fn init_hand_permission(ctx: Context<InitHandPermission>) -> Result<()> {
     // Idempotency guard: a funded permission PDA means it already exists, so bail early.
     if ctx.accounts.permission.lamports() > 0 {
@@ -28,6 +38,19 @@ pub fn init_hand_permission(ctx: Context<InitHandPermission>) -> Result<()> {
         &[hand_bump],
     ];
 
+    let flags = TX_LOGS_FLAG | TX_MESSAGE_FLAG | TX_BALANCES_FLAG;
+    let mut members = vec![Member {
+        flags,
+        pubkey: player_key,
+    }];
+    let signer_key = ctx.accounts.signer.key();
+    if signer_key != player_key {
+        members.push(Member {
+            flags,
+            pubkey: signer_key,
+        });
+    }
+
     CreateEphemeralPermissionCpi {
         payer: ctx.accounts.player_hand.to_account_info(),
         permissioned_account: ctx.accounts.player_hand.to_account_info(),
@@ -37,28 +60,34 @@ pub fn init_hand_permission(ctx: Context<InitHandPermission>) -> Result<()> {
         permission_program: ctx.accounts.permission_program.to_account_info(),
         args: EphemeralMembersArgs {
             is_private: true,
-            // Owner may read their own dice (logs / message / balances).
-            members: vec![Member {
-                flags: TX_LOGS_FLAG | TX_MESSAGE_FLAG | TX_BALANCES_FLAG,
-                pubkey: player_key,
-            }],
+            // Owner and their session key may read their own dice. Opponents still cannot.
+            members,
         },
     }
     .invoke_signed(&[signers])?;
     Ok(())
 }
 
-#[derive(Accounts)]
+#[derive(Accounts, Session)]
 pub struct InitHandPermission<'info> {
-    #[account(mut)]
-    pub player: Signer<'info>,
+    /// The tx signer: the player's wallet OR a session key for `authority`.
+    pub signer: Signer<'info>,
+
+    /// The seat owner (real wallet), not a signer. Used for the hand seeds and as the
+    /// permission member.
+    /// CHECK: identity only; authorization is enforced by `session_auth_or`.
+    pub authority: UncheckedAccount<'info>,
+
+    /// Optional session token proving `signer` may act for `authority`.
+    #[session(signer = signer, authority = authority.key())]
+    pub session_token: Option<Account<'info, SessionTokenV2>>,
 
     /// The caller's own hand (delegated → owned by this program again on the ER).
+    /// Seeds tie it to `authority`, so no one can init another player's permission.
     #[account(
         mut,
-        seeds = [HAND_SEED, player_hand.game.as_ref(), player.key().as_ref()],
+        seeds = [HAND_SEED, player_hand.game.as_ref(), authority.key().as_ref()],
         bump = player_hand.bump,
-        has_one = player @ LiarDiceError::Unauthorized,
     )]
     pub player_hand: Account<'info, PlayerHand>,
 

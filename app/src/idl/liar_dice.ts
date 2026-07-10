@@ -336,25 +336,25 @@ export type LiarDice = {
       ]
     },
     {
-      "name": "delegate",
+      "name": "delegateGame",
       "docs": [
-        "Delegate the game + the caller's own hand to the ER (once per player, after start_game)."
+        "Delegate the shared game PDA to the ER (host-only, in the start tx)."
       ],
       "discriminator": [
-        90,
-        147,
-        75,
-        178,
-        85,
-        88,
-        4,
-        137
+        116,
+        183,
+        70,
+        107,
+        112,
+        223,
+        122,
+        210
       ],
       "accounts": [
         {
-          "name": "player",
+          "name": "payer",
           "docs": [
-            "Any joined player. Signs both delegations."
+            "Whoever pays for the delegation (the host, in the start_game tx)."
           ],
           "writable": true,
           "signer": true
@@ -496,6 +496,84 @@ export type LiarDice = {
         {
           "name": "game",
           "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  103,
+                  97,
+                  109,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "host"
+              },
+              {
+                "kind": "arg",
+                "path": "gameId"
+              }
+            ]
+          }
+        },
+        {
+          "name": "validator",
+          "optional": true
+        },
+        {
+          "name": "ownerProgram",
+          "address": "4Q9UvCjAeKP8xRBLNoSx3ZCp4vmrGXpKcZ1td3RRbzMN"
+        },
+        {
+          "name": "delegationProgram",
+          "address": "DELeGGvXpWV2fqJUhqcF5ZSYMS4JTLjteaAMARRSaeSh"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "gameId",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "delegateHand",
+      "docs": [
+        "Delegate the caller's own hand to the ER (once per player, in the join tx)."
+      ],
+      "discriminator": [
+        67,
+        78,
+        31,
+        57,
+        218,
+        26,
+        110,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "player",
+          "docs": [
+            "The joining player; signs the delegation of their own hand."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "host"
+        },
+        {
+          "name": "game",
+          "docs": [
+            "derive the hand seeds. NOT delegated by this instruction."
+          ],
           "pda": {
             "seeds": [
               {
@@ -839,17 +917,31 @@ export type LiarDice = {
       ],
       "accounts": [
         {
-          "name": "player",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "playerHand"
+          "name": "signer",
+          "docs": [
+            "The tx signer: the player's wallet OR a session key for `authority`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The seat owner (real wallet), not a signer. Used for the hand seeds and as the",
+            "permission member."
           ]
+        },
+        {
+          "name": "sessionToken",
+          "docs": [
+            "Optional session token proving `signer` may act for `authority`."
+          ],
+          "optional": true
         },
         {
           "name": "playerHand",
           "docs": [
-            "The caller's own hand (delegated → owned by this program again on the ER)."
+            "The caller's own hand (delegated → owned by this program again on the ER).",
+            "Seeds tie it to `authority`, so no one can init another player's permission."
           ],
           "writable": true,
           "pda": {
@@ -870,7 +962,7 @@ export type LiarDice = {
               },
               {
                 "kind": "account",
-                "path": "player"
+                "path": "authority"
               }
             ]
           }

@@ -35,9 +35,14 @@ pub mod liar_dice {
         instructions::start_game::start_game(ctx)
     }
 
-    /// Delegate the game + the caller's own hand to the ER (once per player, after start_game).
-    pub fn delegate(ctx: Context<Delegate>, game_id: u64) -> Result<()> {
-        instructions::delegate::delegate(ctx, game_id)
+    /// Delegate the caller's own hand to the ER (once per player, in the join tx).
+    pub fn delegate_hand(ctx: Context<DelegateHand>, game_id: u64) -> Result<()> {
+        instructions::delegate::delegate_hand(ctx, game_id)
+    }
+
+    /// Delegate the shared game PDA to the ER (host-only, in the start tx).
+    pub fn delegate_game(ctx: Context<DelegateGame>, game_id: u64) -> Result<()> {
+        instructions::delegate::delegate_game(ctx, game_id)
     }
 
     /// Make the caller's hand private on the ER (once per player, right after delegate).
