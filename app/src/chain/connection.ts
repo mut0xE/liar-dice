@@ -40,6 +40,21 @@ export async function teeValidator(): Promise<{ identity: PublicKey; fqdn: strin
 // just need one that can mint a token. Read strictly from env so the same
 // reader identity is used in dev and production (set VITE_ER_READER_SECRET to a
 // Keypair secretKey as a JSON array).
+//
+// SECURITY INVARIANT — the reader identity is READ-ONLY and PUBLIC.
+// `VITE_ER_READER_SECRET` is compiled into the shipped client bundle, so this
+// keypair must be treated as known to everyone. It is safe ONLY because it has
+// zero authority: it holds no SOL, never signs a transaction, and is never a
+// permission member. Its single job is signing the ER auth *challenge* to mint a
+// token that reads the non-private `game` account.
+//
+// DO NOT, EVER:
+//   - pass `readerKeypair()` as a transaction fee payer or instruction signer,
+//   - add its pubkey to a hand's PER permission members (that would expose dice),
+//   - fund it, or reuse it as a wallet/session identity.
+// Private reads and gameplay txs must use the player's wallet or session key.
+// Call `assertNotReaderIdentity()` on any pubkey before granting it privilege.
+//
 let readerKp: Keypair | null = null;
 function readerKeypair(): Keypair {
   if (readerKp) return readerKp;
@@ -51,6 +66,29 @@ function readerKeypair(): Keypair {
   }
   readerKp = Keypair.fromSecretKey(Uint8Array.from(JSON.parse(fromEnv)));
   return readerKp;
+}
+
+// Public pubkey of the read-only reader identity (safe to expose; already public).
+export function readerIdentity(): PublicKey {
+  return readerKeypair().publicKey;
+}
+
+// Guard: throw if `pubkey` is the read-only reader identity. Call this before
+// using any pubkey as a tx signer/fee payer or adding it to a PER permission,
+// so the reader can never silently be granted privilege.
+export function assertNotReaderIdentity(pubkey: PublicKey): void {
+  let reader: PublicKey;
+  try {
+    reader = readerKeypair().publicKey;
+  } catch {
+    return; // No reader configured → nothing to guard against.
+  }
+  if (pubkey.equals(reader)) {
+    throw new Error(
+      "Refusing to grant privilege to the read-only ER reader identity. " +
+        "It is public (bundled in the client) and must never sign txs or be a permission member."
+    );
+  }
 }
 
 // Token-authed ER connection using the env reader identity (no wallet popup).

@@ -2,7 +2,7 @@ import { Connection, Keypair, PublicKey, SystemProgram, Transaction, Transaction
 import type { Wallet } from "@coral-xyz/anchor/dist/cjs/provider";
 import { programOn } from "./program";
 import { handPda, permissionPda, sessionTokenPda } from "./pdas";
-import { normalizeErEndpoint, teeValidator } from "./connection";
+import { assertNotReaderIdentity, normalizeErEndpoint, teeValidator } from "./connection";
 import {
   gameplayConnectionFor,
   isAccountDelegated,
@@ -87,6 +87,9 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
   const detail = ctx.onDetail ?? (() => {});
 
   const session = getOrCreateSessionKey(game.pubkey.toBase58());
+  // The session key signs gameplay txs and is added as a PER permission member,
+  // so it must never collide with the public read-only reader identity.
+  assertNotReaderIdentity(session.publicKey);
   const manager = sessionManager(wallet, connection);
   const sessionToken = sessionTokenPda(session.publicKey, wallet.publicKey, manager.program.programId);
   const hand = handPda(game.pubkey, wallet.publicKey);
