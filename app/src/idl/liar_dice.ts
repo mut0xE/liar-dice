@@ -1916,6 +1916,9 @@ export type LiarDice = {
           },
           {
             "name": "ended"
+          },
+          {
+            "name": "cancelled"
           }
         ]
       }

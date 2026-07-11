@@ -47,6 +47,28 @@ export async function buildJoinGame(
   return { tx, kind: "wallet" };
 }
 
+// Host cancels a Waiting game: refunds entry fees and closes hands. Needs [wallet, hand] pairs per player in remaining_accounts.
+export async function buildCancelGame(
+  program: Program<LiarDice>,
+  a: { host: PublicKey; game: PublicKey; vault: PublicKey; players: PublicKey[] }
+): Promise<WalletTx> {
+  const remaining = a.players.flatMap((p) => [
+    { pubkey: p, isSigner: false, isWritable: true },
+    { pubkey: handPda(a.game, p), isSigner: false, isWritable: true },
+  ]);
+  const tx = await program.methods
+    .cancelGame()
+    .accountsPartial({
+      host: a.host,
+      game: a.game,
+      vault: a.vault,
+      systemProgram: SystemProgram.programId,
+    })
+    .remainingAccounts(remaining)
+    .transaction();
+  return { tx, kind: "wallet" };
+}
+
 export async function buildStartGame(
   program: Program<LiarDice>,
   a: { host: PublicKey; game: PublicKey }
@@ -102,10 +124,7 @@ export async function buildDelegateGameIx(
 // ── ER gameplay txs (session-signed) ──
 type S = { sessionSigner: Keypair; authority: PublicKey; sessionToken: PublicKey };
 
-// init_hand_permission runs on the ER, so it MUST be session-signed — wallet-signing
-// an ER tx trips wallets' "network mismatch" guard (they can't recognize the TEE
-// genesis hash). The session key acts for `authority`; the permission member is the
-// wallet (authority), not the session key.
+// Runs on the ER, so it must be session-signed (a wallet signature trips the network-mismatch guard).
 export async function buildInitHandPermission(
   program: Program<LiarDice>,
   s: S,
@@ -145,11 +164,7 @@ export async function buildRequestRoll(
   return { tx, kind: "session", sessionSigner: s.sessionSigner };
 }
 
-// Close the shared roll window and (maybe) open bidding. Standalone — NEVER bundle a
-// place_bid after this: begin_bidding may instead reopen the roll window when fewer
-// than 2 players rolled, leaving phase == Rolling, which would make a bundled bid fail
-// with BadGameState and revert the whole tx (a deadlock). Send this alone, let the game
-// state poll settle to Bidding (or back to Rolling), then bid separately.
+// Closes the roll window and maybe opens bidding. Send standalone — bundling a place_bid after it can deadlock if it reopens the roll window instead.
 export async function buildBeginBidding(
   program: Program<LiarDice>,
   s: S,
@@ -163,13 +178,7 @@ export async function buildBeginBidding(
   return { tx, kind: "session", sessionSigner: s.sessionSigner };
 }
 
-// The first-turn player opens bidding AND places their opening bid in ONE tx.
-// Safe to bundle (unlike a standalone begin_bidding + later bid): both ixs run in
-// the same tx, so if begin_bidding takes the slow path or reopens the roll window
-// (phase stays Rolling), the place_bid fails with BadGameState and the WHOLE tx
-// reverts atomically — no half-open round, no stuck state. The caller just retries.
-// Only offer this to the seat begin_bidding will seat as `current_turn` (the starter),
-// or the bundled bid would fail NotYourTurn.
+// Opens bidding and places the opening bid in one atomic tx — only for the seat begin_bidding will make current_turn, or place_bid fails NotYourTurn.
 export async function buildOpenAndBid(
   program: Program<LiarDice>,
   s: S,

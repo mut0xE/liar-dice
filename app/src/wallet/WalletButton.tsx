@@ -13,31 +13,15 @@ function isAvailable(w: Wallet) {
   );
 }
 
-// Single source of truth for wallet connection UI. Disconnected → a "Connect
-// Wallet" button that opens a picker (Phantom, Solflare, …). Connected → an
-// address chip with copy / disconnect. Disconnect fully clears the selection so
-// the next connect starts from the picker instead of silently reusing the old
-// wallet.
+// Wallet connection UI: a connect button when disconnected, an address chip when connected.
 export function WalletButton() {
-  const { publicKey, wallet, wallets, select, connect, disconnect, connecting } =
+  const { publicKey, wallet, wallets, select, disconnect, connecting } =
     useWallet();
   const [error, setError] = useState<string | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  // True only after the user picks a wallet. Gates the select→connect handoff so
-  // we never silently reconnect a persisted wallet on page load.
-  const wantsConnect = useRef(false);
-
-  // `select` only picks the adapter; finish connecting once it's ready — but
-  // only when the user actually asked to this session.
-  useEffect(() => {
-    if (wallet && wantsConnect.current && !publicKey && !connecting) {
-      wantsConnect.current = false;
-      connect().catch((e) => setError(e?.message ?? String(e)));
-    }
-  }, [wallet, publicKey, connecting, connect]);
 
   // Close the account menu on outside click.
   useEffect(() => {
@@ -59,16 +43,18 @@ export function WalletButton() {
         window.open(w.adapter.url, "_blank");
         return;
       }
-      wantsConnect.current = true;
-      if (wallet?.adapter.name === w.adapter.name) {
-        // Already selected — select() won't re-fire the effect, so connect now.
-        wantsConnect.current = false;
-        connect().catch((e) => setError(e?.message ?? String(e)));
-      } else {
-        select(w.adapter.name);
-      }
+      // Select for the provider, but connect directly on the adapter and do it
+      // synchronously inside this click. Deferring connect to an effect after
+      // select() puts it outside the browser's user-activation window, and the
+      // extension popup gets blocked on the first (not-yet-trusted) attempt —
+      // "doesn't connect until I refresh". The provider still tracks state via
+      // the adapter's connect event.
+      select(w.adapter.name);
+      w.adapter
+        .connect()
+        .catch((e) => setError(e?.message ?? String(e)));
     },
-    [wallet, connect, select],
+    [select],
   );
 
   const handleDisconnect = useCallback(async () => {

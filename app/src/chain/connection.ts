@@ -33,28 +33,9 @@ export async function teeValidator(): Promise<{ identity: PublicKey; fqdn: strin
   return { identity: new PublicKey(res.result.identity), fqdn };
 }
 
-// A stable read-only identity for the TEE endpoint. The PER validator gates
-// *all* RPC (incl. getProgramAccounts) behind an auth token, so even public
-// reads of non-permissioned accounts (like `game`) need a token'd connection.
-// The game account isn't permission-gated, so any identity can read it — we
-// just need one that can mint a token. Read strictly from env so the same
-// reader identity is used in dev and production (set VITE_ER_READER_SECRET to a
-// Keypair secretKey as a JSON array).
-//
-// SECURITY INVARIANT — the reader identity is READ-ONLY and PUBLIC.
-// `VITE_ER_READER_SECRET` is compiled into the shipped client bundle, so this
-// keypair must be treated as known to everyone. It is safe ONLY because it has
-// zero authority: it holds no SOL, never signs a transaction, and is never a
-// permission member. Its single job is signing the ER auth *challenge* to mint a
-// token that reads the non-private `game` account.
-//
-// DO NOT, EVER:
-//   - pass `readerKeypair()` as a transaction fee payer or instruction signer,
-//   - add its pubkey to a hand's PER permission members (that would expose dice),
-//   - fund it, or reuse it as a wallet/session identity.
-// Private reads and gameplay txs must use the player's wallet or session key.
-// Call `assertNotReaderIdentity()` on any pubkey before granting it privilege.
-//
+// Read-only identity used only to mint an ER auth token for public reads (e.g. `game`).
+// SECURITY: this keypair is public (bundled in the client build) and holds no SOL —
+// never use it as a tx signer, fee payer, or PER permission member.
 let readerKp: Keypair | null = null;
 function readerKeypair(): Keypair {
   if (readerKp) return readerKp;
@@ -73,9 +54,7 @@ export function readerIdentity(): PublicKey {
   return readerKeypair().publicKey;
 }
 
-// Guard: throw if `pubkey` is the read-only reader identity. Call this before
-// using any pubkey as a tx signer/fee payer or adding it to a PER permission,
-// so the reader can never silently be granted privilege.
+// Throws if `pubkey` is the read-only reader identity — call before granting privilege.
 export function assertNotReaderIdentity(pubkey: PublicKey): void {
   let reader: PublicKey;
   try {
@@ -91,9 +70,8 @@ export function assertNotReaderIdentity(pubkey: PublicKey): void {
   }
 }
 
-// Token-authed ER connection using the env reader identity (no wallet popup).
-// Cached: minting an auth token every poll tick is what triggers RPC 429s, so
-// we reuse one connection until it errors (then callers clear it via reset).
+// Token-authed ER connection using the env reader identity (no wallet popup). Cached
+// per endpoint so we don't mint a fresh token (and 429) on every poll tick.
 const readerConns = new Map<string, Promise<Connection>>();
 export function readerErConnection(fqdn: string = DEVNET_TEE_ENDPOINT): Promise<Connection> {
   const endpoint = normalizeErEndpoint(fqdn);
@@ -113,11 +91,7 @@ export function resetReaderErConnection(): void {
   readerConns.clear();
 }
 
-// Auth tokens are valid ~30 days but `getAuthToken` re-signs a fresh challenge on
-// EVERY call — with a wallet signer that means a message-sign popup per action and
-// per poll tick. Cache the token per (endpoint, identity) so the wallet is asked
-// to sign at most once per ER session. Keyed by pubkey, so wallet and session-key
-// identities get separate tokens.
+// Cache auth tokens per (endpoint, identity) so the wallet signs at most once per session.
 const authTokenCache = new Map<string, { token: string; expiresAt: number }>();
 const authTokenInflight = new Map<string, Promise<{ token: string; expiresAt: number }>>();
 
@@ -151,10 +125,7 @@ export function resetAuthTokens(): void {
   authTokenInflight.clear();
 }
 
-// Authed TEE connection. `signMessage` signs the auth challenge as `pubkey`
-// (wallet-adapter's signMessage, or a session key's nacl signer). The token
-// identity decides which private accounts this connection may read. Tokens are
-// cached per identity, so the wallet is prompted at most once per ER session.
+// Authed TEE connection; `pubkey`'s signature decides which private accounts it can read.
 export async function authedErConnection(
   fqdn: string,
   signMessage: (m: Uint8Array) => Promise<Uint8Array>,
@@ -167,11 +138,8 @@ export async function authedErConnection(
   return new Connection(http, { wsEndpoint: ws, commitment: "confirmed" });
 }
 
-// ER connection authed by the player's SESSION KEY (nacl) instead of the wallet —
-// no popup. Use for SUBMITTING session-signed gameplay txs (roll/bid/challenge/
-// reveal/settle): the tx carries its own session signature, so the connection
-// identity only needs a valid RPC token, not the wallet. (Reads of the player's
-// PRIVATE dice still need the wallet identity, which the permission gates.)
+// ER connection authed by the player's session key (no wallet popup) — use for
+// submitting session-signed gameplay txs. Private dice reads still need the wallet.
 export async function sessionErConnection(
   fqdn: string,
   session: Keypair

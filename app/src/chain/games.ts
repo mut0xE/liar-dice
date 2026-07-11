@@ -2,15 +2,21 @@ import { BN, Program } from "@coral-xyz/anchor";
 import { PublicKey } from "@solana/web3.js";
 import type { LiarDice } from "../idl/liar_dice";
 import { programOn } from "./program";
-import { readerErConnection, resetReaderErConnection } from "./connection";
+import {
+  authedErConnection,
+  normalizeErEndpoint,
+  readerErConnection,
+  resetReaderErConnection,
+} from "./connection";
+import { DEVNET_TEE_ENDPOINT } from "./constants";
 
-export type GameStatus = "Waiting" | "Active" | "Ended";
+export type GameStatus = "Waiting" | "Active" | "Ended" | "Cancelled";
 export type GamePhase = "Rolling" | "Bidding" | "Revealing";
 const STATUS_OFFSET = 8 + 32 + 8; // discriminator + host + game_id
 
 export function statusFromAccountData(data: Buffer | Uint8Array): GameStatus {
   const b = data[STATUS_OFFSET];
-  return b === 0 ? "Waiting" : b === 1 ? "Active" : "Ended";
+  return b === 0 ? "Waiting" : b === 1 ? "Active" : b === 2 ? "Ended" : "Cancelled";
 }
 
 export type Bid = { quantity: number; face: number; bidder: number };
@@ -81,20 +87,38 @@ export async function listWaitingGames(program: Program<LiarDice>): Promise<Game
   return (await listGames(program)).filter((g) => g.status === "Waiting");
 }
 
-// Delegated (Active/Ongoing) games no longer show up on base layer: once a game
-// is delegated, the delegation program owns its account there, so base-layer
-// getProgramAccounts (owner == our program) drops it. On the ER endpoint the
-// account is owned by our program again, so read active games from there.
-// Best-effort: returns [] on any ER hiccup so the lobby never breaks.
+// Delegated games are owned by the delegation program on base layer, so read them from the ER instead. Best-effort: returns [] on ER hiccups.
 type AnchorWalletLike = Parameters<typeof programOn>[1];
+type ErAuthReader = {
+  publicKey: PublicKey;
+  signMessage?: (message: Uint8Array) => Promise<Uint8Array>;
+};
 
-export async function listErGames(wallet: AnchorWalletLike): Promise<GameSummary[]> {
+async function lobbyErConnection(reader?: ErAuthReader) {
   try {
-    const conn = await readerErConnection();
+    return await readerErConnection();
+  } catch (error) {
+    resetReaderErConnection();
+    if (!reader?.signMessage) throw error;
+    return authedErConnection(
+      normalizeErEndpoint(DEVNET_TEE_ENDPOINT),
+      reader.signMessage,
+      reader.publicKey,
+    );
+  }
+}
+
+export async function listErGames(
+  wallet: AnchorWalletLike,
+  reader?: ErAuthReader,
+): Promise<GameSummary[]> {
+  try {
+    const conn = await lobbyErConnection(reader);
     const erProgram = programOn(conn, wallet);
     const all = await erProgram.account.game.all();
     return all.map((g) => mapGame(g.publicKey, g.account));
-  } catch {
+  } catch (error) {
+    console.warn("[games] ER lobby read failed; showing base-layer games only", error);
     resetReaderErConnection(); // token likely expired/invalid — re-auth next tick
     return [];
   }
@@ -105,9 +129,10 @@ export async function listErGames(wallet: AnchorWalletLike): Promise<GameSummary
 // holds the freshest live state for a game in progress.
 export async function listAllGames(
   baseProgram: Program<LiarDice>,
-  wallet: AnchorWalletLike
+  wallet: AnchorWalletLike,
+  reader?: ErAuthReader,
 ): Promise<GameSummary[]> {
-  const [base, er] = await Promise.all([listGames(baseProgram), listErGames(wallet)]);
+  const [base, er] = await Promise.all([listGames(baseProgram), listErGames(wallet, reader)]);
   const byKey = new Map<string, GameSummary>();
   for (const g of base) byKey.set(g.pubkey.toBase58(), g);
   for (const g of er) byKey.set(g.pubkey.toBase58(), g); // ER overrides base

@@ -8,6 +8,9 @@ export type Toast = {
   label: string;
   detail?: string;
   sig?: string;
+  /** ER endpoint the tx landed on. When set, the explorer link points at the
+   *  custom TEE cluster instead of devnet (the sig only exists on the ER). */
+  erFqdn?: string;
 };
 
 type Listener = (toasts: Toast[]) => void;
@@ -41,6 +44,8 @@ export function pushToast(t: Omit<Toast, "id">, id?: number): number {
     Object.assign(existing, t, { id: tid });
   } else {
     toasts = [...toasts, { ...t, id: tid }];
+    // Keep the stack readable: at most 4 alerts, oldest dropped first.
+    if (toasts.length > 4) toasts = toasts.slice(toasts.length - 4);
   }
   emit();
   // success/error auto-dismiss; pending sticks until updated.
@@ -54,12 +59,13 @@ export function pushToast(t: Omit<Toast, "id">, id?: number): number {
 // The wrapped fn should resolve to the transaction signature.
 export async function withTxToast<T extends string>(
   label: string,
-  run: () => Promise<T>
+  run: () => Promise<T>,
+  opts: { erFqdn?: string } = {}
 ): Promise<T> {
   const id = pushToast({ kind: "pending", label, detail: "Sending…" });
   try {
     const sig = await run();
-    pushToast({ kind: "success", label, detail: "Confirmed", sig }, id);
+    pushToast({ kind: "success", label, detail: "Confirmed", sig, erFqdn: opts.erFqdn }, id);
     return sig;
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -7,9 +7,7 @@ type Signer = {
   signTransaction: (t: Transaction) => Promise<Transaction>;
 };
 
-// Stamp fee payer + blockhash, sign with the wallet, send + confirm.
-// `skipPreflight` MUST be true for ER (TEE) transactions.
-// `label` names the tx in the on-screen alert (defaults to "Transaction").
+// Stamp fee payer + blockhash, sign with the wallet, send + confirm. skipPreflight must be true for ER txs.
 export async function sendWalletTx(
   connection: Connection,
   wallet: Signer,

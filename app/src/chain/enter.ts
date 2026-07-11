@@ -28,16 +28,9 @@ export type HandSetup = {
   identity: PublicKey;
 };
 
-// The onchain `join_game` pre-funds the hand PDA for a SINGLE-member ephemeral
-// permission — `rent(size_of(1))`. But `init_hand_permission` is session-signed, so
-// it writes TWO members: the wallet AND the session key (the session key MUST be a
-// permission member to submit/read the hand on the ER). That extra member is one
-// `Member::SIZE` (33 bytes) of ER rent the program doesn't cover, so we top the hand
-// PDA up here on base BEFORE delegation; the lamports ride onto the ER with the hand
-// and are spent when the 2-member permission is created. (Same pre-funding idea as
-// MagicBlock's private-counter example, just covering the client-added member.)
-//
-// ER rent is `(bytes + 60) * 32`; one extra 33-byte member ⇒ 33 * 32 = 1056 lamports.
+// `join_game` only funds rent for a 1-member permission, but we add the session key
+// as a 2nd member so it can submit/read the hand on the ER — top up that extra
+// member's rent here on base, before delegation, so it rides over with the hand.
 const EPHEMERAL_RENT_PER_BYTE = 32;
 const MEMBER_SIZE = 33; // repr(C): u8 flags + 32-byte pubkey, no padding
 const EXTRA_PERMISSION_MEMBER_RENT = MEMBER_SIZE * EPHEMERAL_RENT_PER_BYTE; // 1056

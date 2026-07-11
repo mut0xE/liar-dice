@@ -18,9 +18,7 @@ export function sessionManager(wallet: Wallet, connection: Connection): SessionT
   return new SessionTokenManager(wallet, connection);
 }
 
-// Session tokens carry a `valid_until` and expire; an expired token makes every
-// gameplay ix fail with session_keys `InvalidToken` (6001). Give them a generous
-// window so a single sit-down doesn't outlive its key. Crate caps this at 7 days.
+// How long a session key stays valid before gameplay ixs start failing with InvalidToken (6001).
 export const DEFAULT_SESSION_TTL_SECONDS = 6 * 60 * 60; // 6 hours
 
 export async function buildCreateSessionIx(
@@ -52,9 +50,7 @@ export async function readSessionValidUntil(
   return Number(info.data.readBigInt64LE(VALID_UNTIL_OFFSET));
 }
 
-// Reclaim an expired (or soon-to-expire) token so a fresh one can take its PDA.
-// For an already-expired token the crate lets anyone revoke; `authority` need not
-// sign. Lamports return to `feePayer`.
+// Reclaim an expired session token's PDA so a fresh one can be created.
 export async function buildRevokeSessionIx(
   manager: SessionTokenManager,
   a: { sessionToken: PublicKey; authority: PublicKey; feePayer: PublicKey }

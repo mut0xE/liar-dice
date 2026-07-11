@@ -20,7 +20,7 @@ export function Connect() {
   }, [publicKey, connection]);
 
   return (
-    <main className="screen center">
+    <main className="screen center connect-screen">
       <h1 className="title">LIAR&apos;S DICE</h1>
       <WalletButton />
       {publicKey && (
@@ -35,6 +35,10 @@ export function Connect() {
           )}
         </div>
       )}
+      <div className="home-powered connect-powered">
+        <span className="home-powered-k">Powered by</span>
+        <img className="home-powered-logo" src="/magicblock-logo.webp" alt="MagicBlock" />
+      </div>
     </main>
   );
 }

@@ -9,6 +9,9 @@ export default defineConfig({
     nodePolyfills({ globals: { Buffer: true, global: true, process: true } }),
     VitePWA({
       registerType: "autoUpdate",
+      // Do not register a service worker during `vite dev`: it can keep serving
+      // stale lobby bundles on localhost and hide the current React route.
+      devOptions: { enabled: false },
       manifest: {
         name: "Liar's Dice",
         short_name: "LiarDice",
@@ -16,8 +19,9 @@ export default defineConfig({
         background_color: "#0b0b0f",
         theme_color: "#0b0b0f",
         icons: [
-          { src: "/icon-192.png", sizes: "192x192", type: "image/png" },
-          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+          { src: "/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/icon-maskable.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
     }),

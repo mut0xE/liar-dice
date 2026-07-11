@@ -15,6 +15,7 @@ pub enum GameStatus {
     Waiting,
     Active,
     Ended,
+    Cancelled,
 }
 
 /// Where an Active round is in its lifecycle:
@@ -153,4 +154,3 @@ pub struct PlayerHand {
 impl PlayerHand {
     pub const SPACE: usize = 8 + 32 + 32 + 5 + 1 + 1 + 1 + 2 + 1;
 }
-

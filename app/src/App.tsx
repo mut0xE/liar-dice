@@ -1,38 +1,55 @@
-import { useState } from "react";
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connect } from "./screens/Connect";
-import { Lobby } from "./screens/Lobby";
-import { GameTable } from "./screens/GameTable";
-import { GameSummary } from "./chain/games";
-import { useAnchorWallet } from "./wallet/useAnchorWallet";
+import { Home } from "./screens/Home";
+import { Games } from "./screens/Games";
+import { NewVoyage } from "./screens/NewVoyage";
+import { WaitingRoom } from "./screens/WaitingRoom";
+import { Play } from "./screens/Play";
 import { WalletButton } from "./wallet/WalletButton";
 import { Toaster } from "./ui/Toaster";
 
-type Phase =
-  | { name: "lobby" }
-  | { name: "play"; game: GameSummary };
-
 export function App() {
-  const { connected } = useWallet();
-  const wallet = useAnchorWallet();
-  const [phase, setPhase] = useState<Phase>({ name: "lobby" });
-  if (!connected || !wallet) return <><Connect /><Toaster /></>;
+  const { publicKey } = useWallet();
+  if (!publicKey) return <><Connect /><Toaster /></>;
 
-  const screen = renderScreen();
   return (
-    <>
-      <header className="app-header">
-        <WalletButton />
-      </header>
-      {screen}
+    <BrowserRouter>
+      <AppHeader />
+      <Routes>
+        <Route path="/" element={<Home />} />
+        <Route path="/games" element={<Games />} />
+        <Route path="/games/new" element={<NewVoyage />} />
+        <Route path="/table/:addr" element={<WaitingRoom />} />
+        <Route path="/play/:addr" element={<Play />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
       <Toaster />
-    </>
+    </BrowserRouter>
   );
+}
 
-  function renderScreen() {
-  if (phase.name === "lobby")
-    return <Lobby onEnter={(game) => setPhase({ name: "play", game })} />;
-  if (phase.name === "play")
-    return <GameTable game={phase.game} onExit={() => setPhase({ name: "lobby" })} />;
-  }
+function AppHeader() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const atHome = location.pathname === "/";
+  const atTable = location.pathname.startsWith("/play/");
+  // Back walks UP the screen hierarchy, never through raw history — history can
+  // hold dead states (a "table not found" flash, a stale setup screen) that
+  // replaying would resurrect.
+  const backTo = atTable || location.pathname.startsWith("/table/") || location.pathname.startsWith("/games/")
+    ? "/games"
+    : "/";
+  return (
+    <header className={`app-header${atTable ? " on-table" : ""}`}>
+      {!atHome ? (
+        <button className="back-btn" onClick={() => navigate(backTo)} aria-label="Back">
+          <span className="back-arrow">‹</span> Back
+        </button>
+      ) : (
+        <span />
+      )}
+      <WalletButton />
+    </header>
+  );
 }

@@ -88,6 +88,26 @@ export async function waitForErClone(
   throw new Error(`${label} has not finished syncing to the rollup yet. Wait a moment and retry.`);
 }
 
+/**
+ * Wait until an account has been UNDELEGATED back to base layer, i.e. owned by
+ * our program again on the base connection. The ER's commit-and-undelegate
+ * settles a beat after the ER tx confirms; a base-layer instruction that touches
+ * the account in that window sees it still owned by the delegation program.
+ */
+export async function waitForUndelegation(
+  baseConnection: Connection,
+  account: PublicKey,
+  label: string,
+  tries = 30
+): Promise<void> {
+  for (let i = 0; i < tries; i++) {
+    const info = await baseConnection.getAccountInfo(account);
+    if (info && info.owner.equals(PROGRAM_ID)) return;
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error(`${label} has not returned from the rollup yet. Wait a moment and retry.`);
+}
+
 export async function gameplayConnectionFor(accounts: PublicKey[]): Promise<{
   connection: Connection;
   fqdn: string;

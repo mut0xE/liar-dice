@@ -15,8 +15,10 @@ pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) ->
 
     let player_count = game.players.len();
     // Two accounts per player, in game.players order: the wallet (refund destination)
-    // and that player's hand PDA (closed here). The game is Waiting, so hands were
-    // never delegated — this is a plain base-layer close, no ER/undelegation involved.
+    // and that player's hand PDA. Hands are delegated to the ER at JOIN time; a hand
+    // still delegated (owned by the delegation program) here is refunded but NOT
+    // closed — there is no instruction path left to undelegate it once this call
+    // sets the game to Ended, so its rent stays locked in the ER-owned account.
     require!(
         ctx.remaining_accounts.len() == player_count * 2,
         LiarDiceError::MissingHand
@@ -66,10 +68,11 @@ pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) ->
             )?;
         }
 
-        require!(
-            hand_account.owner == &crate::ID,
-            LiarDiceError::Unauthorized
-        );
+        // Only close hands that have come home from the ER; a still-delegated
+        // hand belongs to the delegation program and can't be touched here.
+        if hand_account.owner != &crate::ID {
+            continue;
+        }
 
         let hand_lamports = hand_account.lamports();
         let player_lamports = player_account.lamports();
@@ -81,7 +84,7 @@ pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) ->
     }
 
     game.pot_lamports = 0;
-    game.status = GameStatus::Ended;
+    game.status = GameStatus::Cancelled;
     Ok(())
 }
 

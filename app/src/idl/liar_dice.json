@@ -26,7 +26,7 @@
         {
           "name": "caller",
           "docs": [
-            "Any signer may open bidding — a plain wallet or a player's session key."
+            "Any signer may open bidding \u2014 a plain wallet or a player's session key."
           ],
           "signer": true
         },
@@ -178,7 +178,7 @@
         {
           "name": "player",
           "docs": [
-            "The rent recipient — must be the hand's owner (enforced by `has_one` below)."
+            "The rent recipient \u2014 must be the hand's owner (enforced by `has_one` below)."
           ],
           "writable": true,
           "relations": [
@@ -934,7 +934,7 @@
         {
           "name": "player_hand",
           "docs": [
-            "The caller's own hand (delegated → owned by this program again on the ER).",
+            "The caller's own hand (delegated \u2192 owned by this program again on the ER).",
             "Seeds tie it to `authority`, so no one can init another player's permission."
           ],
           "writable": true,
@@ -1910,6 +1910,9 @@
           },
           {
             "name": "Ended"
+          },
+          {
+            "name": "Cancelled"
           }
         ]
       }
@@ -1991,9 +1994,9 @@
       "name": "RoundPhase",
       "docs": [
         "Where an Active round is in its lifecycle:",
-        "Rolling   — everyone rolls simultaneously (one shared roll window).",
-        "Bidding   — turn-based bidding/challenging over the players who rolled.",
-        "Revealing — a challenge is open; participants reveal, then `settle_round` scores it."
+        "Rolling   \u2014 everyone rolls simultaneously (one shared roll window).",
+        "Bidding   \u2014 turn-based bidding/challenging over the players who rolled.",
+        "Revealing \u2014 a challenge is open; participants reveal, then `settle_round` scores it."
       ],
       "type": {
         "kind": "enum",

@@ -24,6 +24,7 @@ import {
 } from "../chain/builders";
 import { sendSessionTx } from "../chain/sendSession";
 import { validateBid, countFace, dieMatches } from "../chain/bidRules";
+import { avatarPos } from "../ui/avatar";
 
 type Ready = {
   session: Keypair;
@@ -47,6 +48,14 @@ type RoundResult = {
 const MISS_LIMIT = 2;
 
 const short = (k: PublicKey) => k.toBase58().slice(0, 4) + "…" + k.toBase58().slice(-4);
+
+// A player's label for showdown/result text: "You" for the local wallet, otherwise
+// the player's wallet address (shortened). Never a raw seat number.
+const playerName = (idx: number, players: PublicKey[], me: PublicKey) => {
+  const p = players[idx];
+  if (!p) return "Player";
+  return p.equals(me) ? "You" : short(p);
+};
 const sol = (n: number) => (n / LAMPORTS_PER_SOL).toFixed(3);
 
 function enumKey(v: Record<string, unknown> | string | undefined, fallback = ""): string {
@@ -54,17 +63,17 @@ function enumKey(v: Record<string, unknown> | string | undefined, fallback = "")
   return typeof v === "string" ? v.toLowerCase() : Object.keys(v)[0] ?? fallback;
 }
 
-function useCountdown(deadline?: number): string {
+function useCountdown(deadline?: number): { label: string; left: number | null } {
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
   useEffect(() => {
     const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
     return () => clearInterval(id);
   }, []);
-  if (!deadline) return "--";
+  if (!deadline) return { label: "--", left: null };
   const left = Math.max(0, deadline - now);
   const m = Math.floor(left / 60);
   const s = left % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
+  return { label: `${m}:${s.toString().padStart(2, "0")}`, left };
 }
 
 export function GameTable({
@@ -109,9 +118,11 @@ export function GameTable({
 
   return (
     <main className="screen game-screen">
-      <TableHeader game={game} />
       {!ready ? (
-        <SetupPanel status={status} details={details} />
+        <>
+          <TableHeader game={game} />
+          <SetupPanel status={status} details={details} />
+        </>
       ) : (
         <LiveGameTable game={game} ready={ready} onExit={onExit} />
       )}
@@ -122,9 +133,9 @@ export function GameTable({
 function TableHeader({ game }: { game: GameSummary }) {
   return (
     <section className="table-top">
-      <div>
-        <h2 className="title">LIAR'S DICE</h2>
-        <div className="muted">table {short(game.pubkey)}</div>
+      <div className="table-ident">
+        <span className="stat-lbl">Table</span>
+        <span className="table-code mono">{short(game.pubkey)}</span>
       </div>
       <div className="table-pot">
         <span className="stat-lbl">Pot</span>
@@ -135,10 +146,12 @@ function TableHeader({ game }: { game: GameSummary }) {
 }
 
 function SetupPanel({ status, details }: { status: string; details: string[] }) {
+  const isError = status.startsWith("Error");
   return (
-    <section className="table-action">
-      <h3 className="section-head no-border">Getting Ready</h3>
-      <div className="muted">{status}</div>
+    <section className="table-setup">
+      <span className="spinner-dot" aria-hidden="true" />
+      <h3 className="section-head no-border">Getting the table ready</h3>
+      <div className={isError ? "tx-error" : "muted"}>{status}</div>
       {details.length > 0 && (
         <div className="rollup-status compact">
           {details.slice(-3).map((line) => (
@@ -162,7 +175,14 @@ function LiveGameTable({
   const wallet = useAnchorWallet();
   const { signMessage, publicKey } = useWallet();
   const { game: g, refresh: refreshGame } = useGameState(ready.fqdn, game.pubkey);
-  const hand = wallet ? handPda(game.pubkey, wallet.publicKey) : game.pubkey;
+  // Memoize by base58 so `hand` keeps a stable object identity across renders.
+  // handPda() mints a fresh PublicKey each call; passing that straight into
+  // useMyHand would change its refresh() identity every render and spin an
+  // infinite fetch→setState→render loop (hammering the ER with 429s).
+  const hand = useMemo(
+    () => (wallet ? handPda(game.pubkey, wallet.publicKey) : game.pubkey),
+    [wallet?.publicKey.toBase58(), game.pubkey],
+  );
   const handState = useMyHand(ready.fqdn, hand, ready.session);
   const [qty, setQty] = useState(1);
   const [face, setFace] = useState(2);
@@ -180,7 +200,20 @@ function LiveGameTable({
   // buttons stay disabled until the on-chain turn actually moves off us — closes
   // the gap where `busy` clears before state propagates and a double-submit slips in.
   const [actedTurn, setActedTurn] = useState<number | null>(null);
-  const [paid, setPaid] = useState(false);
+  // Which crew avatar is expanded to show its full wallet address.
+  const [openSeat, setOpenSeat] = useState<number | null>(null);
+  // Claimed state survives remounts (poll hiccups, navigation) via localStorage,
+  // so the Claim button can't reappear after the pot already moved.
+  const claimedKey = `liar-dice:claimed:${game.pubkey.toBase58()}`;
+  const [paid, setPaidState] = useState(() => {
+    try { return globalThis.localStorage?.getItem(claimedKey) === "1"; } catch { return false; }
+  });
+  const setPaid = (v: boolean) => {
+    setPaidState(v);
+    try { if (v) globalThis.localStorage?.setItem(claimedKey, "1"); } catch { /* hint only */ }
+  };
+  // Base-layer signature of the payout Magic Action — the tx that actually moved the pot.
+  const [l1Sig, setL1Sig] = useState<string | null>(null);
   const revealRound = useRef<number | null>(null);
   const settleRound = useRef<number | null>(null);
 
@@ -273,8 +306,8 @@ function LiveGameTable({
   // Anchor custom error code from a reverted-tx message, else null.
   const errCode = (e: unknown): number | null => {
     const m = (e as Error)?.message ?? String(e);
-    const match = /custom program error: (\d+)/.exec(m);
-    return match ? Number(match[1]) : null;
+    const match = /custom program error: (\d+)|\(code (\d+)\)/.exec(m);
+    return match ? Number(match[1] ?? match[2]) : null;
   };
   // "Someone else already did this / phase moved on" — benign for auto actions.
   // 6016 DuplicateHand, 6018 NotSettled, 6001 BadGameState.
@@ -453,6 +486,10 @@ function LiveGameTable({
     if (!winner) return;
     setBusy("payout");
     setTxError(null);
+    // end_game runs `payout` as a base-layer Magic Action, so the SOL actually moves
+    // in a SEPARATE L1 tx — the ER sig doesn't exist on the devnet explorer. Send the
+    // ER tx quietly and make the resolved L1 commit signature the one we show.
+    const toastId = pushToast({ kind: "pending", label: "Claim prize", detail: "Committing game to base layer…" });
     try {
       const { conn, program } = await withProgram();
       const hands = (g.players as PublicKey[]).map((p) => handPda(game.pubkey, p));
@@ -462,19 +499,59 @@ function LiveGameTable({
         winner,
         handAccounts: hands,
       });
-      const erSig = await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Pay out winner");
+      const erSig = await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Pay out winner", { quiet: true });
       setPaid(true);
-      // end_game runs `payout` as a base-layer Magic Action, so the SOL actually
-      // moves in a SEPARATE L1 tx — the ER sig above won't resolve on devnet
-      // explorer. Resolve the base-layer commit signature and surface it too.
-      try {
-        const l1Sig = await GetCommitmentSignature(erSig, conn);
-        pushToast({ kind: "success", label: "Payout settled on L1", detail: "Confirmed on base layer", sig: l1Sig });
-      } catch {
-        // Best-effort: the ER tx already succeeded; skip if the commit sig can't be resolved.
+      let sig: string | null = null;
+      for (let attempt = 0; attempt < 8 && !sig; attempt++) {
+        try {
+          sig = await GetCommitmentSignature(erSig, conn);
+        } catch {
+          await new Promise((r) => setTimeout(r, 1500));
+        }
+      }
+      if (sig) {
+        setL1Sig(sig);
+        pushToast({ kind: "success", label: "Prize paid on Solana", detail: "Pot transferred on the base layer", sig }, toastId);
+      } else {
+        // The ER tx landed and will still seal on base layer — the commit signature
+        // just hasn't resolved yet. Keep polling in the background and update the
+        // toast (and the explorer link) with the real signature once it lands,
+        // instead of leaving the player with a signature-less message forever.
+        pushToast(
+          { kind: "pending", label: "Prize claimed", detail: "Payout committing to the base layer — resolving signature…" },
+          toastId,
+        );
+        void (async () => {
+          for (let attempt = 0; attempt < 20 && !sig; attempt++) {
+            await new Promise((r) => setTimeout(r, 3000));
+            try {
+              sig = await GetCommitmentSignature(erSig, conn);
+            } catch {
+              // keep polling
+            }
+          }
+          if (sig) {
+            setL1Sig(sig);
+            pushToast({ kind: "success", label: "Prize paid on Solana", detail: "Pot transferred on the base layer", sig }, toastId);
+          } else {
+            pushToast(
+              { kind: "error", label: "Signature unresolved", detail: "Payout landed, but we couldn't confirm the base-layer signature — check your wallet history." },
+              toastId,
+            );
+          }
+        })();
       }
     } catch (e) {
-      setTxError(explain(e));
+      const msg = explain(e);
+      // ReadonlyDataModified = end_game touched accounts already committed back to
+      // base — i.e. the prize was ALREADY claimed. Not an error for the player.
+      if (/already committed back|ReadonlyDataModified/i.test(msg)) {
+        setPaid(true);
+        pushToast({ kind: "success", label: "Prize claimed", detail: "The pot was already paid out on Solana." }, toastId);
+      } else {
+        pushToast({ kind: "error", label: "Claim prize", detail: msg }, toastId);
+        setTxError(msg);
+      }
     } finally {
       setBusy(null);
     }
@@ -483,6 +560,22 @@ function LiveGameTable({
   useEffect(() => {
     handState.refresh(round);
   }, [round, phase]);
+
+  // Keep the bid inputs inside the legal window: quantity can never exceed the
+  // dice still on the table (program error 6004) or fall below the minimum raise,
+  // and the face auto-bumps past the previous bid when quantities are equal.
+  useEffect(() => {
+    if (phase !== "bidding") return;
+    const minQ = previousBid ? (previousBid.face >= 6 ? previousBid.quantity + 1 : previousBid.quantity) : 1;
+    const maxQ = Math.max(1, totalDice);
+    setQty((q) => Math.min(Math.max(q, minQ), maxQ));
+  }, [phase, previousBid, totalDice]);
+  useEffect(() => {
+    if (phase !== "bidding" || !previousBid) return;
+    if (qty === previousBid.quantity && face <= previousBid.face) {
+      setFace(Math.min(previousBid.face + 1, 6));
+    }
+  }, [phase, previousBid, qty, face]);
 
   // Clear the optimistic action lock once the on-chain turn has moved off us.
   useEffect(() => {
@@ -512,18 +605,29 @@ function LiveGameTable({
       setHistory((prev) => [snap, ...prev].slice(0, 12));
       setRoundResult(snap);
       pendingShowdown.current = null;
+      // Every client sees the settle land (settle itself is sent quietly and only
+      // one seat's tx wins the race, so a toast there would miss most players).
+      const winnerIdx = snap.bidHeld ? snap.bid.bidder : snap.challenger;
+      pushToast({
+        kind: "success",
+        label: `Round ${snap.round} settled`,
+        detail: `${playerName(winnerIdx, players, wallet!.publicKey)} won — ${playerName(snap.loser, players, wallet!.publicKey)} lost a die (${snap.actual} shown)`,
+      });
     }
   }, [g, phase, allRevealed, round]);
 
-  // Once we've rolled, drive the round into bidding automatically. begin_bidding
-  // only flips the phase when EVERY active player has rolled (or the window expired
-  // and no-shows are struck), so bidding inputs never appear until all dice are in.
+  // Drive the round into bidding automatically. begin_bidding only flips the phase
+  // when EVERY active player has rolled (or the window expired and no-shows are
+  // struck), so bidding inputs never appear until all dice are in. It runs once we've
+  // rolled AND — critically — once the on-chain roll deadline has passed even if WE
+  // never rolled, so no-shows always get struck/force-quit from live chain state
+  // instead of waiting on some other client to do it.
   useEffect(() => {
-    if (phase !== "rolling" || !rolledThisRound) return;
+    if (phase !== "rolling" || (!rolledThisRound && !deadlinePassed)) return;
     autoBegin();
     const id = setInterval(autoBegin, 2500);
     return () => clearInterval(id);
-  }, [phase, rolledThisRound, round]);
+  }, [phase, rolledThisRound, deadlinePassed, round]);
 
   useEffect(() => {
     if (phase !== "revealing" || revealRound.current === round || handState.revealed) return;
@@ -540,48 +644,85 @@ function LiveGameTable({
     return () => clearTimeout(t);
   }, [canSettle, round]);
 
+  const phaseLabel = status === "ended" ? "ended" : phase;
+  const urgent = countdown.left !== null && countdown.left > 0 && countdown.left <= 10;
   return (
     <>
-      <section className="table-hud">
-        <div><span className="stat-lbl">Round</span><strong>{round}</strong></div>
-        <div><span className="stat-lbl">Phase</span><strong>{status === "ended" ? "Ended" : phase}</strong></div>
-        <div><span className="stat-lbl">Timer</span><strong>{countdown}</strong></div>
-        <div><span className="stat-lbl">Bid</span><BidBadge bid={previousBid} /></div>
+      <section className="table-console">
+        <div className="console-ident">
+          <span className="console-code mono" title={game.pubkey.toBase58()}>{short(game.pubkey)}</span>
+          <span className="console-pot">{sol(game.potLamports.toNumber())} SOL</span>
+        </div>
+        <div className="console-stats">
+          <div className="hud-cell"><span className="hud-k">Round</span><strong>{round}</strong></div>
+          <div className="hud-cell"><span className="hud-k">Phase</span><strong className={`ph-${phaseLabel}`}>{phaseLabel}</strong></div>
+          <div className="hud-cell"><span className="hud-k">Bid</span><BidBadge bid={previousBid} /></div>
+          <div className={`hud-cell hud-timer${urgent ? " urgent" : ""}`}>
+            <span className="hud-k">Timer</span>
+            <strong>{countdown.label}</strong>
+          </div>
+        </div>
       </section>
 
       <section className="table-layout">
         <div className="player-rail">
-          {players.map((p, i) => (
-            <div className={`table-seat ${active[i] ? "" : "out"} ${Number(g?.currentTurn) === i ? "turn" : ""}`} key={p.toBase58()}>
-              <span className="mono">#{i}</span>
-              <span className="seat-name">
-                {p.equals(wallet!.publicKey) ? "you" : short(p)}
-                {phase === "rolling" && active[i] && (
-                  <small>{p.equals(wallet!.publicKey) && rolledThisRound ? "rolled" : "hidden"}</small>
-                )}
-                {phase !== "rolling" && participating[i] && <small>in round</small>}
-                {active[i] && (missedRolls[i] ?? 0) > 0 && (
-                  <span className="strikes" title={`Missed ${missedRolls[i]} of ${MISS_LIMIT} rolls — eliminated on ${MISS_LIMIT}`}>
-                    {Array.from({ length: MISS_LIMIT }).map((_, k) => (
-                      <span key={k} className={`strike-pip ${k < (missedRolls[i] ?? 0) ? "on" : ""}`} />
-                    ))}
-                    <small>strike {missedRolls[i]}/{MISS_LIMIT}</small>
+          <div className="crew-row">
+            {players.map((p, i) => {
+              const isMe = p.equals(wallet!.publicKey);
+              const isTurn = Number(g?.currentTurn) === i && status !== "ended";
+              return (
+                <button
+                  type="button"
+                  key={p.toBase58()}
+                  className={`crew-chip${isMe ? " me" : ""}${isTurn ? " turn" : ""}${active[i] ? "" : " out"}${openSeat === i ? " open" : ""}`}
+                  onClick={() => setOpenSeat(openSeat === i ? null : i)}
+                  title={p.toBase58()}
+                >
+                  <span className="crew-avatar" style={avatarPos(i)}>
+                    <span className={`crew-dice${active[i] ? "" : " gone"}`}>{diceCounts[i] ?? 0}</span>
                   </span>
-                )}
-              </span>
-              <span className="mono">{active[i] ? `${diceCounts[i] ?? 0} dice` : "out"}</span>
+                  <span className="crew-name">{isMe ? "you" : short(p)}</span>
+                  <span className="crew-status">
+                    {!active[i]
+                      ? (missedRolls[i] ?? 0) >= MISS_LIMIT
+                        ? `struck out — missed ${missedRolls[i]}/${MISS_LIMIT} rolls`
+                        : "out — lost last die"
+                      : isTurn
+                        ? "turn"
+                        : (missedRolls[i] ?? 0) > 0
+                          ? `strike ${missedRolls[i]}/${MISS_LIMIT} — didn't roll`
+                          : phase === "rolling"
+                            ? isMe && rolledThisRound ? "rolled" : "rolling"
+                            : participating[i] ? "in round" : ""}
+                  </span>
+                </button>
+              );
+            })}
+            <div className="crew-chip total-chip" aria-label={`${totalDice} total dice`}>
+              <span className="crew-avatar total">🎲</span>
+              <span className="crew-name">{totalDice} dice</span>
+              <span className="crew-status">on table</span>
             </div>
-          ))}
-          <div className="table-seat total">
-            <span>Total dice</span>
-            <span className="mono">{totalDice}</span>
           </div>
+          {openSeat !== null && players[openSeat] && (
+            <button
+              type="button"
+              className="crew-pub mono"
+              onClick={() => {
+                navigator.clipboard?.writeText(players[openSeat].toBase58());
+                pushToast({ kind: "success", label: "Address copied" });
+              }}
+            >
+              {players[openSeat].toBase58()}
+              <small>{players[openSeat].equals(wallet!.publicKey) ? "your wallet — " : ""}tap to copy</small>
+            </button>
+          )}
           <HistoryBoard history={history} players={players} wallet={wallet!.publicKey} />
         </div>
 
         <section className="table-action">
           {status === "ended" ? (
-            <GameOverPanel game={g} mySeat={mySeat} busy={busy} paid={paid} onPayout={payout} onExit={onExit} />
+            <GameOverPanel game={g} mySeat={mySeat} busy={busy} paid={paid} l1Sig={l1Sig} onPayout={payout} onExit={onExit} />
           ) : phase === "rolling" ? (
             <RollingPanel
               rolled={rolledThisRound}
@@ -589,7 +730,10 @@ function LiveGameTable({
               diceReady={Boolean(handState.dice?.length)}
               busy={busy}
               roundResult={roundResult}
+              players={players}
+              me={wallet!.publicKey}
               deadlinePassed={deadlinePassed}
+              myStrikes={mySeat >= 0 ? missedRolls[mySeat] ?? 0 : 0}
               onRoll={roll}
               onForceOpen={forceOpen}
             />
@@ -607,7 +751,10 @@ function LiveGameTable({
               onBid={bid}
               onChallenge={challenge}
               myDice={handState.dice}
+              totalDice={totalDice}
               deadlinePassed={deadlinePassed}
+              players={players}
+              me={wallet!.publicKey}
               onForceTimeout={forceTimeout}
             />
           ) : phase === "revealing" ? (
@@ -619,6 +766,8 @@ function LiveGameTable({
               canSettle={canSettle}
               revealed={handState.revealed}
               busy={busy}
+              players={players}
+              me={wallet!.publicKey}
             />
           ) : null}
           {err && <div className="muted">{err}</div>}
@@ -634,22 +783,70 @@ function BidInputs({
   face,
   setQty,
   setFace,
+  minQty,
+  maxQty,
+  faceAllowed,
+  previousBid,
 }: {
   qty: number;
   face: number;
   setQty: (n: number) => void;
   setFace: (n: number) => void;
+  minQty: number;
+  maxQty: number;
+  faceAllowed: (f: number) => boolean;
+  previousBid: { quantity: number; face: number } | null;
 }) {
+  const clampQty = (n: number) => Math.max(minQty, Math.min(maxQty, Math.floor(n) || minQty));
   return (
     <div className="bid-inputs">
-      <label>
-        <span className="stat-lbl">Qty</span>
-        <input className="input" type="number" min={1} value={qty} onChange={(e) => setQty(Number(e.target.value))} />
-      </label>
-      <label>
+      <div className="bid-field">
+        <span className="stat-lbl">Quantity</span>
+        <div className="stepper">
+          <button
+            type="button"
+            className="step-btn"
+            onClick={() => setQty(clampQty(qty - 1))}
+            disabled={qty <= minQty}
+            aria-label="Decrease quantity"
+          >
+            −
+          </button>
+          <span className="step-val" aria-live="polite">{qty}</span>
+          <button
+            type="button"
+            className="step-btn"
+            onClick={() => setQty(clampQty(qty + 1))}
+            disabled={qty >= maxQty}
+            aria-label="Increase quantity"
+          >
+            +
+          </button>
+        </div>
+      </div>
+      <div className="bid-field">
         <span className="stat-lbl">Face</span>
-        <input className="input" type="number" min={1} max={6} value={face} onChange={(e) => setFace(Number(e.target.value))} />
-      </label>
+        <div className="face-picker">
+          {[1, 2, 3, 4, 5, 6].map((f) => (
+            <button
+              type="button"
+              key={f}
+              className={`face-btn${face === f ? " selected" : ""}`}
+              onClick={() => setFace(f)}
+              disabled={!faceAllowed(f)}
+              aria-label={`Face ${f}`}
+              aria-pressed={face === f}
+            >
+              <Dice value={f} mini />
+            </button>
+          ))}
+        </div>
+        {previousBid && qty === previousBid.quantity && (
+          <div className="muted face-hint">
+            At quantity {qty} you must bid higher than face {previousBid.face} — raise the quantity to unlock lower faces.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -660,16 +857,25 @@ function RollingPanel(props: {
   diceReady: boolean;
   busy: string | null;
   deadlinePassed: boolean;
+  myStrikes: number;
   roundResult: RoundResult | null;
+  players: PublicKey[];
+  me: PublicKey;
   onRoll: () => void;
   onForceOpen: () => void;
 }) {
   if (!props.rolled) {
     return (
       <>
-        {props.roundResult && <RoundResultPanel result={props.roundResult} />}
+        {props.roundResult && <RoundResultPanel result={props.roundResult} players={props.players} me={props.me} />}
         <h3 className="section-head no-border">Roll</h3>
         <div className="muted">Your dice stay private until someone challenges.</div>
+        {props.deadlinePassed && (
+          <div className="tx-error">
+            Roll window closed — missing this roll is strike {Math.min(props.myStrikes + 1, MISS_LIMIT)}/{MISS_LIMIT}
+            {props.myStrikes + 1 >= MISS_LIMIT ? " and strikes you out of the game." : ". Roll now if you still can."}
+          </div>
+        )}
         <button className="btn" onClick={props.onRoll} disabled={Boolean(props.busy)}>
           {props.busy === "roll" ? "Rolling…" : "Roll Dice"}
         </button>
@@ -681,12 +887,9 @@ function RollingPanel(props: {
   // gates it), so there are no bid inputs here — just our hand and a wait state.
   return (
     <>
-      {props.roundResult && <RoundResultPanel result={props.roundResult} />}
-      <h3 className="section-head no-border">Your Hand</h3>
+      {props.roundResult && <RoundResultPanel result={props.roundResult} players={props.players} me={props.me} />}
       {props.diceReady ? (
-        <div className="dice-row">
-          {(props.dice ?? []).map((d, i) => <Dice key={i} value={d} delay={i * 80} />)}
-        </div>
+        <MyHand dice={props.dice} />
       ) : (
         <div className="muted">Approve the private dice read once if your hand is not visible.</div>
       )}
@@ -728,18 +931,29 @@ function BiddingPanel(props: {
   onBid: () => void;
   onChallenge: () => void;
   myDice: number[] | null;
+  totalDice: number;
   deadlinePassed: boolean;
+  players: PublicKey[];
+  me: PublicKey;
   onForceTimeout: () => void;
 }) {
   const disabled = Boolean(props.busy) || props.locked;
+  const turnName = playerName(props.turn, props.players, props.me);
+  const prev = props.previousBid;
+  // Legal bid window against the live table: quantity can't exceed the dice in
+  // play, and equal-quantity bids must raise the face.
+  const minQty = prev ? (prev.face >= 6 ? prev.quantity + 1 : prev.quantity) : 1;
+  const maxQty = Math.max(1, props.totalDice);
+  const faceAllowed = (f: number) => !prev || props.qty > prev.quantity || f > prev.face;
+  const raisePossible = minQty <= maxQty && (!prev || prev.quantity < maxQty || prev.face < 6);
   if (!props.myTurn) {
     return (
       <>
         <MyHand dice={props.myDice} />
-        <div className="muted">Waiting for seat #{props.turn}.</div>
+        <div className="muted">Waiting for {turnName}.</div>
         {props.deadlinePassed && (
           <button className="btn small ghost full" onClick={props.onForceTimeout} disabled={Boolean(props.busy)}>
-            {props.busy === "timeout" ? "Timing out…" : `Time out seat #${props.turn}`}
+            {props.busy === "timeout" ? "Timing out…" : `Time out ${turnName}`}
           </button>
         )}
       </>
@@ -749,12 +963,22 @@ function BiddingPanel(props: {
     <>
       <MyHand dice={props.myDice} />
       <h3 className="section-head no-border">Your Turn</h3>
-      <BidInputs {...props} />
-      <button className="btn" onClick={props.onBid} disabled={disabled}>
-        {props.busy === "bid" ? "Bidding…" : props.locked ? "Bid placed" : "Raise"}
-      </button>
+      {raisePossible ? (
+        <>
+          <BidInputs {...props} minQty={minQty} maxQty={maxQty} faceAllowed={faceAllowed} />
+          <button className="btn" onClick={props.onBid} disabled={disabled}>
+            {props.busy === "bid" ? "Bidding…" : props.locked ? "Bid placed" : "Raise"}
+          </button>
+        </>
+      ) : (
+        <div className="muted">The bid can't go any higher — challenge it!</div>
+      )}
       {props.previousBid && (
-        <button className="btn small ghost full" onClick={props.onChallenge} disabled={disabled}>
+        <button
+          className={`btn btn-red ${raisePossible ? "small " : ""}full`}
+          onClick={props.onChallenge}
+          disabled={disabled}
+        >
           {props.busy === "challenge" ? "Challenging…" : "Challenge"}
         </button>
       )}
@@ -770,6 +994,8 @@ function RevealPanel({
   canSettle,
   revealed,
   busy,
+  players,
+  me,
 }: {
   reveals: any[];
   count: number;
@@ -778,6 +1004,8 @@ function RevealPanel({
   canSettle: boolean;
   revealed: boolean;
   busy: string | null;
+  players: PublicKey[];
+  me: PublicKey;
 }) {
   // Reveal AND settle both run automatically over the session key (see the
   // auto-reveal / auto-settle effects in LiveGameTable), so there are no manual
@@ -799,13 +1027,13 @@ function RevealPanel({
   return (
     <>
       <h3 className="section-head no-border">Showdown</h3>
-      {bid && <div className="muted challenged-bid">Challenged bid: <BidBadge bid={bid} /> · Challenger: seat #{challenger}</div>}
+      {bid && <div className="muted challenged-bid">Challenged bid: <BidBadge bid={bid} /> · Challenger: {playerName(challenger, players, me)}</div>}
       <div className="muted">Reveals {reveals.length}/{count}</div>
       {bid && allIn && <FaceTally reveals={reveals} face={bid.face} target={actual} />}
       {reveals.map((r, i) => (
         <div className="reveal-row" key={`${Number(r.playerIdx)}-${i}`}>
           <div className="reveal-seat">
-            <span className="mono">Seat #{Number(r.playerIdx)}</span>
+            <span className="mono">{playerName(Number(r.playerIdx), players, me)}</span>
             <small>{Number(r.diceCount)} dice</small>
           </div>
           <div className="dice-row">
@@ -828,6 +1056,7 @@ function GameOverPanel({
   mySeat,
   busy,
   paid,
+  l1Sig,
   onPayout,
   onExit,
 }: {
@@ -835,6 +1064,7 @@ function GameOverPanel({
   mySeat: number;
   busy: string | null;
   paid: boolean;
+  l1Sig: string | null;
   onPayout: () => void;
   onExit: () => void;
 }) {
@@ -844,8 +1074,20 @@ function GameOverPanel({
   return (
     <>
       <h3 className="section-head no-border">Game Over</h3>
-      <div className="card compact-card">Winner {winner ? short(winner) : "resolving"}</div>
+      <div className="card compact-card">
+        {winner ? (iWon ? "You win! 🏆" : <>Winner: <span className="mono">{short(winner)}</span></>) : "Winner resolving…"}
+      </div>
       {paid && <div className="muted">Prize claimed. The game and hands were committed back.</div>}
+      {l1Sig && (
+        <a
+          className="toast-link"
+          href={`https://explorer.solana.com/tx/${l1Sig}?cluster=devnet`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Payout tx on Solana Explorer ↗
+        </a>
+      )}
       {iWon ? (
         <button className="btn" onClick={onPayout} disabled={Boolean(busy) || paid}>
           {busy === "payout" ? "Paying…" : paid ? "Prize Claimed" : "Claim Prize"}
@@ -910,9 +1152,7 @@ function HistoryBoard({
   );
 }
 
-// Animated tally that "counts" the challenged face across every revealed die:
-// pips light up one-by-one and a number ticks from 0 up to the true count, so the
-// showdown reads like a hand-count of the table before settle lands.
+// Animated tally of the challenged face across every revealed die.
 function FaceTally({ reveals, face, target }: { reveals: any[]; face: number; target: number }) {
   const total = reveals.reduce((n, r) => n + Number(r.diceCount), 0);
   const [shown, setShown] = useState(0);
@@ -943,16 +1183,27 @@ function FaceTally({ reveals, face, target }: { reveals: any[]; face: number; ta
   );
 }
 
-function RoundResultPanel({ result }: { result: RoundResult }) {
+function RoundResultPanel({
+  result,
+  players,
+  me,
+}: {
+  result: RoundResult;
+  players: PublicKey[];
+  me: PublicKey;
+}) {
+  const winner = result.bidHeld ? result.bid.bidder : result.challenger;
   return (
     <div className="round-result">
       <div className="stat-lbl">Round {result.round} Result</div>
       <strong>
-        Seat #{result.loser} lost a die
+        {playerName(winner, players, me)} won the round
       </strong>
-      <div className="muted challenged-bid">
-        Bid was <BidBadge bid={result.bid} /> · Revealed count: {result.actual}.{" "}
-        {result.bidHeld ? "Bid held; challenger loses." : "Bid failed; bidder loses."}
+      <div className="result-meta">
+        <span>{playerName(result.loser, players, me)} lost a die</span>
+        <span className="challenged-bid">
+          Bid <BidBadge bid={result.bid} /> · {result.actual} shown
+        </span>
       </div>
     </div>
   );

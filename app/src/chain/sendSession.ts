@@ -46,5 +46,8 @@ export async function sendSessionTx(
       throw new Error(await transactionErrorMessage(error, connection));
     }
   };
-  return opts.quiet ? run() : withTxToast(label, run);
+  // The connection endpoint carries the auth token as a query param — strip it
+  // so the explorer link exposes only the public TEE URL, never the token.
+  const erFqdn = connection.rpcEndpoint.split("?")[0];
+  return opts.quiet ? run() : withTxToast(label, run, { erFqdn });
 }
