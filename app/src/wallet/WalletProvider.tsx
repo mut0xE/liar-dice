@@ -16,6 +16,7 @@ import {
 } from "@solana-mobile/wallet-adapter-mobile";
 import { WalletAdapterNetwork } from "@solana/wallet-adapter-base";
 import { DEVNET_ENDPOINT } from "../chain/constants";
+import { pushToast } from "../ui/toast";
 
 export function WalletProvider({ children }: { children: ReactNode }) {
   const wallets = useMemo(
@@ -39,6 +40,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   const onError = useCallback((e: WalletError) => {
     // Surface adapter errors instead of silently swallowing them.
     console.error("[wallet]", e.name, e.message);
+    pushToast({ kind: "error", label: "Wallet error", detail: e.message || e.name });
   }, []);
   return (
     <ConnectionProvider endpoint={DEVNET_ENDPOINT}>

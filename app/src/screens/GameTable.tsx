@@ -3,6 +3,7 @@ import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { GetCommitmentSignature } from "@magicblock-labs/ephemeral-rollups-sdk";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
+import { useWalletStatus } from "../wallet/useWalletStatus";
 import { sessionErConnection } from "../chain/connection";
 import { pushToast } from "../ui/toast";
 import { programOn } from "../chain/program";
@@ -174,6 +175,7 @@ function LiveGameTable({
 }) {
   const wallet = useAnchorWallet();
   const { signMessage, publicKey } = useWallet();
+  const walletStatus = useWalletStatus();
   const { game: g, refresh: refreshGame } = useGameState(ready.fqdn, game.pubkey);
   // Memoize by base58 so `hand` keeps a stable object identity across renders.
   // handPda() mints a fresh PublicKey each call; passing that straight into
@@ -648,6 +650,9 @@ function LiveGameTable({
   const urgent = countdown.left !== null && countdown.left > 0 && countdown.left <= 10;
   return (
     <>
+      {walletStatus === "disconnected" && (
+        <div className="tx-error">Wallet disconnected — reconnect to keep playing.</div>
+      )}
       <section className="table-console">
         <div className="console-ident">
           <span className="console-code mono" title={game.pubkey.toBase58()}>{short(game.pubkey)}</span>
