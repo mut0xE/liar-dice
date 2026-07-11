@@ -7,9 +7,9 @@ export type AsyncState<T> =
 
 type FetchResult<T> = { ok: true; data: T } | { ok: false; error: string };
 
-// Pure so it's testable without rendering React. A failed fetch keeps the last
-// good value visible (still an error state, just not a blank screen) instead of
-// discarding data the user was already looking at.
+// Pure so it's testable without rendering React (this repo's Vitest env is
+// "node", not jsdom). Keeps lastData on failure so a transient error doesn't
+// blank out data the user was already looking at.
 export function nextAsyncState<T>(prev: AsyncState<T>, result: FetchResult<T>): AsyncState<T> {
   if (result.ok) return { status: "data", data: result.data };
   const lastData = prev.status === "data" ? prev.data : prev.status === "error" ? prev.lastData : undefined;
