@@ -7,7 +7,7 @@ import { GameSummary } from "../chain/games";
 export function Play() {
   const { addr } = useParams();
   const navigate = useNavigate();
-  const { games, loaded } = useGames();
+  const { games, loaded, fetchFailed } = useGames();
   // Once the table resolves, keep it. The lobby poll briefly loses a game while
   // it commits between the ER and base layer (e.g. right after a prize claim) —
   // dropping to "not found" mid-game would unmount the live table and replay the
@@ -23,7 +23,7 @@ export function Play() {
       <main className="screen center-screen">
         <div className="ribbon"><div className="band">Liar's Dice</div></div>
         <div className="muted" style={{ marginTop: 20 }}>
-          {loaded ? "Table not found — it may have ended." : "Loading table…"}
+          {fetchFailed ? "Couldn't reach the fleet — check your connection and retry." : loaded ? "Table not found — it may have ended." : "Loading table…"}
         </div>
         {loaded && <Link className="btn btn-blue btn-sm" to="/games" style={{ marginTop: 14 }}>Back to Open Waters</Link>}
       </main>

@@ -15,7 +15,7 @@ export function Games() {
   const navigate = useNavigate();
   const { publicKey } = useWallet();
   const wallet = useAnchorWallet();
-  const { waiting, active, ended, loaded, erWarning, refresh } = useGames();
+  const { waiting, active, ended, loaded, fetchFailed, erWarning, refresh } = useGames();
   const { busy, join, cancel } = useGameActions();
 
   const [tab, setTab] = useState<Tab>("open");
@@ -195,7 +195,8 @@ export function Games() {
             );
           })}
           {!loaded && <div className="muted empty loading">Scanning the waters…</div>}
-          {loaded && waiting.length === 0 && <div className="muted empty">No open tables. Create one.</div>}
+          {loaded && fetchFailed && <div className="muted empty">Couldn't reach the fleet — check your connection and retry.</div>}
+          {loaded && !fetchFailed && waiting.length === 0 && <div className="muted empty">No open tables. Create one.</div>}
         </div>
       </section>
       )}
@@ -233,7 +234,8 @@ export function Games() {
             );
           })}
           {!loaded && <div className="muted empty loading">Scanning the waters…</div>}
-          {loaded && active.length === 0 && <div className="muted empty">No games in progress.</div>}
+          {loaded && fetchFailed && <div className="muted empty">Couldn't reach the fleet — check your connection and retry.</div>}
+          {loaded && !fetchFailed && active.length === 0 && <div className="muted empty">No games in progress.</div>}
         </div>
       </section>
       )}
@@ -330,7 +332,8 @@ export function Games() {
             );
           })}
           {!loaded && <div className="muted empty loading">Scanning the waters…</div>}
-          {loaded && ended.length === 0 && <div className="muted empty">No finished games yet.</div>}
+          {loaded && fetchFailed && <div className="muted empty">Couldn't reach the fleet — check your connection and retry.</div>}
+          {loaded && !fetchFailed && ended.length === 0 && <div className="muted empty">No finished games yet.</div>}
         </div>
       </section>
       )}

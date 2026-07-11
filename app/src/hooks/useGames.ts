@@ -13,6 +13,11 @@ export function findGameByAddress(
   return games.find((g) => g.pubkey.toBase58() === addr) ?? null;
 }
 
+/** Pure lookup: has the list ever loaded successfully? Exported for tests. */
+export function hasEverLoaded(state: { succeededOnce: boolean }): boolean {
+  return state.succeededOnce;
+}
+
 /**
  * Shared games fetch + gentle polling. Every routed page (Games list, Waiting
  * Room, Play) reads from the same source so a deep-link / refresh still resolves
@@ -24,6 +29,7 @@ export function useGames(pollMs = 10000) {
   const [games, setGames] = useState<GameSummary[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [erWarning, setErWarning] = useState<string | null>(null);
+  const [succeededOnce, setSucceededOnce] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!wallet) {
@@ -35,6 +41,7 @@ export function useGames(pollMs = 10000) {
       const canReadEr = Boolean(import.meta.env.VITE_ER_READER_SECRET || wallet.signMessage);
       setErWarning(canReadEr ? null : "Ongoing games are hidden until this wallet can sign the rollup read challenge.");
       setGames(await listAllGames(program, wallet, wallet));
+      setSucceededOnce(true);
     } catch (e) {
       // Public devnet getProgramAccounts rate-limits (429) and hiccups. Keep the
       // last good list and try again on the next poll instead of leaving the
@@ -72,5 +79,5 @@ export function useGames(pollMs = 10000) {
     [games],
   );
 
-  return { games, loaded, erWarning, refresh, ...byStatus };
+  return { games, loaded, erWarning, refresh, fetchFailed: loaded && !hasEverLoaded({ succeededOnce }), ...byStatus };
 }

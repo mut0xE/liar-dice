@@ -11,7 +11,7 @@ export function WaitingRoom() {
   const { addr } = useParams();
   const navigate = useNavigate();
   const wallet = useAnchorWallet();
-  const { games, loaded } = useGames(4000);
+  const { games, loaded, fetchFailed } = useGames(4000);
   const { busy, start, cancel } = useGameActions();
   const [openSeat, setOpenSeat] = useState<number | null>(null);
   // Cancelling refunds real SOL and kills the table — ask for a second tap.
@@ -42,7 +42,7 @@ export function WaitingRoom() {
       <main className="screen waiting center-screen">
         <div className="ribbon"><div className="band">Mustering Crew</div></div>
         <div className="muted" style={{ marginTop: 20 }}>
-          {loaded ? "Table not found — it may have started or been cancelled." : "Loading table…"}
+          {fetchFailed ? "Couldn't reach the fleet — check your connection and retry." : loaded ? "Table not found — it may have started or been cancelled." : "Loading table…"}
         </div>
         {loaded && <Link className="btn btn-blue btn-sm" to="/games" style={{ marginTop: 14 }}>Back to Open Waters</Link>}
       </main>

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Keypair } from "@solana/web3.js";
-import { findGameByAddress } from "../useGames";
+import { findGameByAddress, hasEverLoaded } from "../useGames";
 import { GameSummary } from "../../chain/games";
 
 // Minimal GameSummary stub — only the pubkey matters for the lookup helper.
@@ -26,5 +26,15 @@ describe("findGameByAddress", () => {
 
   it("returns null against an empty list", () => {
     expect(findGameByAddress([], "anything")).toBeNull();
+  });
+});
+
+describe("hasEverLoaded", () => {
+  it("is false before any successful fetch", () => {
+    expect(hasEverLoaded({ succeededOnce: false })).toBe(false);
+  });
+
+  it("is true once a fetch has succeeded, even if a later one fails", () => {
+    expect(hasEverLoaded({ succeededOnce: true })).toBe(true);
   });
 });
