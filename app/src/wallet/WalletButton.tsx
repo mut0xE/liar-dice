@@ -43,16 +43,19 @@ export function WalletButton() {
         window.open(w.adapter.url, "_blank");
         return;
       }
-      // Select for the provider, but connect directly on the adapter and do it
-      // synchronously inside this click. Deferring connect to an effect after
-      // select() puts it outside the browser's user-activation window, and the
-      // extension popup gets blocked on the first (not-yet-trusted) attempt —
-      // "doesn't connect until I refresh". The provider still tracks state via
-      // the adapter's connect event.
+      // Select only — DON'T call adapter.connect() ourselves here. The provider
+      // attaches its 'connect' listener in an effect keyed on the adapter, which
+      // only runs after the re-render select() triggers. Calling .connect()
+      // synchronously right after select() raced ahead of that effect: if the
+      // wallet responded fast, its 'connect' event fired before the listener was
+      // attached and was lost — publicKey never updated until a refresh
+      // re-mounted everything in the right order ("doesn't connect until I
+      // refresh"). select() sets hasUserSelectedAWallet=true internally, which
+      // arms the provider's own autoConnect effect to call adapter.connect()
+      // itself — in the SAME component as the listener effect, so React runs
+      // them in declaration order and the race can't happen. Connect errors
+      // surface via the app-level onError toast (wallet/WalletProvider.tsx).
       select(w.adapter.name);
-      w.adapter
-        .connect()
-        .catch((e) => setError(e?.message ?? String(e)));
     },
     [select],
   );
