@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use ephemeral_rollups_sdk::anchor::delegate;
 use ephemeral_rollups_sdk::cpi::DelegateConfig;
 
+use crate::errors::LiarDiceError;
 use crate::state::*;
 
 /// Delegate the CALLER'S OWN hand to the ER. Called once per player, in the SAME tx
@@ -86,11 +87,14 @@ pub struct DelegateHand<'info> {
 #[derive(Accounts)]
 #[instruction(game_id: u64)]
 pub struct DelegateGame<'info> {
-    /// Whoever pays for the delegation (the host, in the start_game tx).
-    #[account(mut)]
+    /// Whoever pays for the delegation. Must be the host — otherwise anyone could
+    /// delegate a still-`Waiting` game to the ER ahead of `start_game`, freezing
+    /// `join_game` for that table (it requires a base-layer-owned `Game` account).
+    #[account(mut, constraint = payer.key() == host.key() @ LiarDiceError::Unauthorized)]
     pub payer: Signer<'info>,
 
-    /// CHECK: only the host's key is used to derive the game PDA seeds; not a signer.
+    /// CHECK: only the host's key is used to derive the game PDA seeds; verified
+    /// against `payer` above rather than being a signer itself.
     pub host: UncheckedAccount<'info>,
 
     /// CHECK: the Game PDA. `del` adds its delegation accounts + `delegate_game()`.

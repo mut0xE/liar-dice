@@ -22,6 +22,11 @@ pub fn settle_round(ctx: Context<SettleRound>) -> Result<()> {
     // missing but the deadline has passed, so slash every participant who failed to
     // reveal and settle the bid over whoever did.
     let all_revealed = game.last_reveal.len() == game.participating_count();
+    // Seats already slashed for missing their reveal below — the bid-outcome loser
+    // (often the very same seat, since a non-revealing bidder's dice never counted
+    // toward the bid) must not also take the separate loser penalty further down,
+    // or they'd lose two dice in a single settle_round call.
+    let mut already_slashed = vec![false; game.players.len()];
     if !all_revealed {
         require!(game.action_deadline != 0, LiarDiceError::BadGameState);
         require!(now > game.action_deadline, LiarDiceError::DeadlineNotReached);
@@ -38,6 +43,7 @@ pub fn settle_round(ctx: Context<SettleRound>) -> Result<()> {
                         game.is_active[idx] = false;
                     }
                 }
+                already_slashed[idx] = true;
             }
         }
     }
@@ -49,10 +55,11 @@ pub fn settle_round(ctx: Context<SettleRound>) -> Result<()> {
     let bid_held = actual >= bid.quantity as u32;
     let loser = if bid_held { game.challenger } else { bid.bidder };
 
-    // The loser drops a die and is eliminated if it was their last (no-op if already zeroed).
+    // The loser drops a die and is eliminated if it was their last (no-op if already
+    // zeroed, or if they already lost a die above for failing to reveal this round).
     let loser_idx = loser as usize;
     game.last_loser = loser;
-    if game.dice_counts[loser_idx] > 0 {
+    if !already_slashed[loser_idx] && game.dice_counts[loser_idx] > 0 {
         game.dice_counts[loser_idx] -= 1;
         if game.dice_counts[loser_idx] == 0 {
             game.is_active[loser_idx] = false;
