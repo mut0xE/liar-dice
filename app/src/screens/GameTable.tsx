@@ -690,12 +690,12 @@ function LiveGameTable({
                   <span className="crew-status">
                     {!active[i]
                       ? (missedRolls[i] ?? 0) >= MISS_LIMIT
-                        ? `struck out — missed ${missedRolls[i]}/${MISS_LIMIT} rolls`
-                        : "out — lost last die"
+                        ? "struck out"
+                        : "out"
                       : isTurn
                         ? "turn"
                         : (missedRolls[i] ?? 0) > 0
-                          ? `strike ${missedRolls[i]}/${MISS_LIMIT} — didn't roll`
+                          ? `strike ${missedRolls[i]}/${MISS_LIMIT}`
                           : phase === "rolling"
                             ? isMe && rolledThisRound ? "rolled" : "rolling"
                             : participating[i] ? "in round" : ""}

@@ -1310,6 +1310,10 @@ body::before {
 .crew-chip.me .crew-name { color: var(--gold); font-weight: 700; }
 .crew-status {
   min-height: 0.9em;
+  max-width: 84px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.56rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
