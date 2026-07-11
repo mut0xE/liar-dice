@@ -25,6 +25,7 @@ import {
 import { sendSessionTx } from "../chain/sendSession";
 import { validateBid, countFace, dieMatches } from "../chain/bidRules";
 import { avatarPos } from "../ui/avatar";
+import { copyAddress } from "../ui/format";
 
 type Ready = {
   session: Keypair;
@@ -135,7 +136,7 @@ function TableHeader({ game }: { game: GameSummary }) {
     <section className="table-top">
       <div className="table-ident">
         <span className="stat-lbl">Table</span>
-        <span className="table-code mono">{short(game.pubkey)}</span>
+        <span className="table-code mono copyable" onClick={() => copyAddress(game.pubkey)}>{short(game.pubkey)}</span>
       </div>
       <div className="table-pot">
         <span className="stat-lbl">Pot</span>
@@ -619,7 +620,7 @@ function LiveGameTable({
       )}
       <section className="table-console">
         <div className="console-ident">
-          <span className="console-code mono" title={game.pubkey.toBase58()}>{short(game.pubkey)}</span>
+          <span className="console-code mono copyable" onClick={() => copyAddress(game.pubkey)}>{short(game.pubkey)}</span>
           <span className="console-pot">{sol(game.potLamports.toNumber())} SOL</span>
         </div>
         <div className="console-stats">
@@ -1042,7 +1043,7 @@ function GameOverPanel({
     <>
       <h3 className="section-head no-border">Game Over</h3>
       <div className="card compact-card">
-        {winner ? (iWon ? "You win! 🏆" : <>Winner: <span className="mono">{short(winner)}</span></>) : "Winner resolving…"}
+        {winner ? (iWon ? "You win! 🏆" : <>Winner: <span className="mono copyable" onClick={() => copyAddress(winner)}>{short(winner)}</span></>) : "Winner resolving…"}
       </div>
       {paid && <div className="muted">Prize claimed. The game and hands were committed back.</div>}
       {iWon ? (

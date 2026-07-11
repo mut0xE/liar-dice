@@ -5,7 +5,7 @@ import { useAnchorWallet } from "../wallet/useAnchorWallet";
 import { GameSummary } from "../chain/games";
 import { useGames } from "../hooks/useGames";
 import { useGameActions } from "../hooks/useGameActions";
-import { short, sol } from "../ui/format";
+import { short, sol, copyAddress } from "../ui/format";
 import { avatarPos } from "../ui/avatar";
 import { pushToast } from "../ui/toast";
 
@@ -142,7 +142,7 @@ export function Games() {
                 }}
               >
                 <div className="game-card-top">
-                  <span className="mono code">{short(g.pubkey)}</span>
+                  <span className="mono code copyable" onClick={(e) => { e.stopPropagation(); copyAddress(g.pubkey); }}>{short(g.pubkey)}</span>
                   {mine && <span className="host-mark" title="You created this table">⚓ Your table</span>}
                   <span className="status-tag waiting">WAITING</span>
                   <span className="result-chevron" aria-hidden>▾</span>
@@ -158,7 +158,7 @@ export function Games() {
                       {g.players.map((p, i) => (
                         <li key={p.toBase58()} className="result-seat">
                           <span className="crew-avatar seat-mini" style={avatarPos(i)} />
-                          <span className="mono seat-addr">{short(p)}</span>
+                          <span className="mono seat-addr copyable" onClick={() => copyAddress(p)}>{short(p)}</span>
                           {p.equals(g.host) && <span className="seat-tag host">HOST</span>}
                           {p.equals(me) && <span className="seat-tag you">YOU</span>}
                         </li>
@@ -214,7 +214,7 @@ export function Games() {
             return (
               <div className="card game-card" key={addr}>
                 <div className="game-card-top">
-                  <span className="mono code">{short(g.pubkey)}</span>
+                  <span className="mono code copyable" onClick={() => copyAddress(g.pubkey)}>{short(g.pubkey)}</span>
                   <span className="status-tag rolling">{g.phase.toUpperCase()}</span>
                 </div>
                 <div className="stat-grid">
@@ -267,12 +267,12 @@ export function Games() {
                 }}
               >
                 <div className="game-card-top">
-                  <span className="mono code">{short(g.pubkey)}</span>
+                  <span className="mono code copyable" onClick={(e) => { e.stopPropagation(); copyAddress(g.pubkey); }}>{short(g.pubkey)}</span>
                   <span className={`status-tag ${isCancelled ? "cancelled" : "ended"}`}>{isCancelled ? "CANCELLED" : "ENDED"}</span>
                   <span className="result-chevron" aria-hidden>▾</span>
                 </div>
                 <div className="game-card-meta">
-                  {isCancelled ? "Cancelled — entry fees refunded" : g.winner ? <>Winner <span className="mono">{short(g.winner)}</span>{iWon ? " 👑" : ""}</> : "No winner"}
+                  {isCancelled ? "Cancelled — entry fees refunded" : g.winner ? <>Winner <span className="mono copyable" onClick={(e) => { e.stopPropagation(); copyAddress(g.winner!); }}>{short(g.winner)}</span>{iWon ? " 👑" : ""}</> : "No winner"}
                   {" · "}<span className="gold-t">{sol(g.potLamports)} ◎</span>
                 </div>
 
@@ -285,7 +285,7 @@ export function Games() {
                         </span>
                         <div>
                           <div className="winner-lbl">{iWon ? "You took the pot" : "Winner"}</div>
-                          <div className="mono winner-addr">{short(g.winner)}</div>
+                          <div className="mono winner-addr copyable" onClick={(e) => { e.stopPropagation(); copyAddress(g.winner!); }}>{short(g.winner)}</div>
                         </div>
                         <span className="winner-pot gold-t">{sol(g.potLamports)} ◎</span>
                       </div>
@@ -304,7 +304,7 @@ export function Games() {
                         return (
                           <li key={p.toBase58()} className={`result-seat${isWinner ? " winner" : ""}`}>
                             <span className="crew-avatar seat-mini" style={avatarPos(i)} />
-                            <span className="mono seat-addr">{short(p)}</span>
+                            <span className="mono seat-addr copyable" onClick={() => copyAddress(p)}>{short(p)}</span>
                             {p.equals(g.host) && <span className="seat-tag host">HOST</span>}
                             {p.equals(me) && <span className="seat-tag you">YOU</span>}
                             <span className={`seat-fate${isWinner ? " won" : ""}`}>
@@ -337,6 +337,11 @@ export function Games() {
         </div>
       </section>
       )}
+
+      <div className="home-powered games-powered">
+        <span className="home-powered-k">Powered by</span>
+        <img className="home-powered-logo" src="/magicblock-logo.webp" alt="MagicBlock" />
+      </div>
     </main>
   );
 }

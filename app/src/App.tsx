@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { Connect } from "./screens/Connect";
@@ -15,6 +16,7 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <ScrollToTop />
       <AppHeader />
       <Routes>
         <Route path="/" element={<Home />} />
@@ -27,6 +29,16 @@ export function App() {
       <Toaster />
     </BrowserRouter>
   );
+}
+
+// The browser keeps the previous page's scroll offset across a route change by
+// default, so navigating into a screen can open already scrolled partway down.
+function ScrollToTop() {
+  const { pathname } = useLocation();
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+  return null;
 }
 
 function AppHeader() {
