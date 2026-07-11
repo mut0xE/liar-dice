@@ -1570,6 +1570,7 @@ body::before {
   justify-content: flex-end;
   gap: 18px;
   min-height: 100dvh;
+  overflow-y: auto;
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 30px);
 }
 
@@ -1645,6 +1646,20 @@ body::before {
 .connect-screen > .connect-powered { margin-top: 8px; position: relative; z-index: 0; }
 
 .home-dock { display: grid; gap: 12px; margin-top: 2px; }
+
+/* This hero was built for a tall phone screen. On a wide-but-short viewport
+   (a normal desktop browser window, or a landscape phone) the same vertical
+   stack can grow taller than the viewport — since .home is bottom-anchored,
+   that pushes the CTA buttons below the fold instead of shrinking to fit.
+   Scale the rhythm down by viewport height so the whole hero — including
+   the buttons — always fits in one screen without scrolling. */
+@media (max-height: 760px) {
+  .home { gap: 10px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px); }
+  .home-wordmark { font-size: clamp(2.4rem, 9vh, 5.4rem); }
+  .home-tag { margin-top: 4px; }
+  .home-dock { gap: 8px; margin-top: 0; }
+  .home-dock .btn { padding-top: 10px; padding-bottom: 10px; }
+}
 
 /* Connect / splash — bright kraken-frame art behind the wallet gate */
 .connect-screen {
