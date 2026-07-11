@@ -177,6 +177,7 @@ body::before {
 .mono  { color: var(--muted); font-family: "DM Mono", ui-monospace, monospace; }
 .muted { color: var(--muted); font-size: 0.88rem; }
 .link  { color: var(--ember); text-decoration: underline; cursor: pointer; }
+.balance-retry { background: none; border: none; font: inherit; cursor: pointer; padding: 0; }
 
 .list { display: grid; gap: 12px; margin-top: 14px; }
 .row  { display: flex; align-items: center; justify-content: space-between; }
