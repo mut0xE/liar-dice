@@ -214,7 +214,11 @@ function LiveGameTable({
     setPaidState(v);
     try { if (v) globalThis.localStorage?.setItem(claimedKey, "1"); } catch { /* hint only */ }
   };
-  // Base-layer signature of the payout Magic Action — the tx that actually moved the pot.
+  // The rollup (PER) signature of the payout tx — this is real proof the payout
+  // landed, shown to the player immediately. The base-layer signature is a slower,
+  // optional resolution of the same payout on devnet; never block on it.
+  const [perSig, setPerSig] = useState<string | null>(null);
+  const [perFqdn, setPerFqdn] = useState<string | null>(null);
   const [l1Sig, setL1Sig] = useState<string | null>(null);
   const revealRound = useRef<number | null>(null);
   const settleRound = useRef<number | null>(null);
@@ -489,8 +493,10 @@ function LiveGameTable({
     setBusy("payout");
     setTxError(null);
     // end_game runs `payout` as a base-layer Magic Action, so the SOL actually moves
-    // in a SEPARATE L1 tx — the ER sig doesn't exist on the devnet explorer. Send the
-    // ER tx quietly and make the resolved L1 commit signature the one we show.
+    // in a SEPARATE L1 tx. The ER (PER) tx is the one we actually control and can
+    // confirm immediately, so it's the real proof-of-payout shown to the player —
+    // the base-layer signature is a slower, optional bonus resolved quietly after,
+    // never something the player has to wait on or gets an error about.
     const toastId = pushToast({ kind: "pending", label: "Claim prize", detail: "Committing game to base layer…" });
     try {
       const { conn, program } = await withProgram();
@@ -501,48 +507,30 @@ function LiveGameTable({
         winner,
         handAccounts: hands,
       });
+      const erFqdn = conn.rpcEndpoint.split("?")[0];
       const erSig = await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Pay out winner", { quiet: true });
       setPaid(true);
-      let sig: string | null = null;
-      for (let attempt = 0; attempt < 8 && !sig; attempt++) {
-        try {
-          sig = await GetCommitmentSignature(erSig, conn);
-        } catch {
-          await new Promise((r) => setTimeout(r, 1500));
+      setPerSig(erSig);
+      setPerFqdn(erFqdn);
+      pushToast(
+        { kind: "success", label: "Prize claimed", detail: "Pot transferred", sig: erSig, erFqdn },
+        toastId,
+      );
+      // Best-effort, silent: resolve the base-layer signature for the explorer
+      // link in GameOverPanel, but never re-open the toast or show an error for
+      // it — the payout already succeeded and the player already has proof.
+      void (async () => {
+        let sig: string | null = null;
+        for (let attempt = 0; attempt < 20 && !sig; attempt++) {
+          try {
+            sig = await GetCommitmentSignature(erSig, conn);
+          } catch {
+            // keep polling
+          }
+          if (!sig) await new Promise((r) => setTimeout(r, 3000));
         }
-      }
-      if (sig) {
-        setL1Sig(sig);
-        pushToast({ kind: "success", label: "Prize paid on Solana", detail: "Pot transferred on the base layer", sig }, toastId);
-      } else {
-        // The ER tx landed and will still seal on base layer — the commit signature
-        // just hasn't resolved yet. Keep polling in the background and update the
-        // toast (and the explorer link) with the real signature once it lands,
-        // instead of leaving the player with a signature-less message forever.
-        pushToast(
-          { kind: "pending", label: "Prize claimed", detail: "Payout committing to the base layer — resolving signature…" },
-          toastId,
-        );
-        void (async () => {
-          for (let attempt = 0; attempt < 20 && !sig; attempt++) {
-            await new Promise((r) => setTimeout(r, 3000));
-            try {
-              sig = await GetCommitmentSignature(erSig, conn);
-            } catch {
-              // keep polling
-            }
-          }
-          if (sig) {
-            setL1Sig(sig);
-            pushToast({ kind: "success", label: "Prize paid on Solana", detail: "Pot transferred on the base layer", sig }, toastId);
-          } else {
-            pushToast(
-              { kind: "error", label: "Signature unresolved", detail: "Payout landed, but we couldn't confirm the base-layer signature — check your wallet history." },
-              toastId,
-            );
-          }
-        })();
-      }
+        if (sig) setL1Sig(sig);
+      })();
     } catch (e) {
       const msg = explain(e);
       // ReadonlyDataModified = end_game touched accounts already committed back to
@@ -727,7 +715,7 @@ function LiveGameTable({
 
         <section className="table-action">
           {status === "ended" ? (
-            <GameOverPanel game={g} mySeat={mySeat} busy={busy} paid={paid} l1Sig={l1Sig} onPayout={payout} onExit={onExit} />
+            <GameOverPanel game={g} mySeat={mySeat} busy={busy} paid={paid} perSig={perSig} perFqdn={perFqdn} l1Sig={l1Sig} onPayout={payout} onExit={onExit} />
           ) : phase === "rolling" ? (
             <RollingPanel
               rolled={rolledThisRound}
@@ -1061,6 +1049,8 @@ function GameOverPanel({
   mySeat,
   busy,
   paid,
+  perSig,
+  perFqdn,
   l1Sig,
   onPayout,
   onExit,
@@ -1069,6 +1059,8 @@ function GameOverPanel({
   mySeat: number;
   busy: string | null;
   paid: boolean;
+  perSig: string | null;
+  perFqdn: string | null;
   l1Sig: string | null;
   onPayout: () => void;
   onExit: () => void;
@@ -1083,6 +1075,16 @@ function GameOverPanel({
         {winner ? (iWon ? "You win! 🏆" : <>Winner: <span className="mono">{short(winner)}</span></>) : "Winner resolving…"}
       </div>
       {paid && <div className="muted">Prize claimed. The game and hands were committed back.</div>}
+      {perSig && (
+        <a
+          className="toast-link"
+          href={`https://explorer.solana.com/tx/${perSig}?cluster=custom&customUrl=${encodeURIComponent(perFqdn ?? "")}`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Payout tx on the rollup ↗
+        </a>
+      )}
       {l1Sig && (
         <a
           className="toast-link"
@@ -1090,7 +1092,7 @@ function GameOverPanel({
           target="_blank"
           rel="noreferrer"
         >
-          Payout tx on Solana Explorer ↗
+          Payout tx on Solana Explorer (base layer) ↗
         </a>
       )}
       {iWon ? (
