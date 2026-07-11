@@ -629,6 +629,7 @@ body::before {
 }
 
 @media (max-width: 760px) {
+  .btn-sm { min-height: 44px; }
   .table-top {
     flex-direction: column;
   }
