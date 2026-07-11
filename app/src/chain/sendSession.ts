@@ -34,11 +34,17 @@ export async function sendSessionTx(
         pollAfterTimeout: () => connection.getSignatureStatus(sig).then((r) => (r.value ? { value: { err: r.value.err } } : null)),
         onResolvedInBackground: (r) => {
           if (!toastId) return;
-          if (r.status === "confirmed") pushToast({ kind: "success", label, detail: "Confirmed", sig }, toastId);
+          if (r.status === "confirmed") pushToast({ kind: "success", label, detail: "Confirmed", sig, erFqdn }, toastId);
           else pushToast({ kind: "error", label, detail: r.error }, toastId);
         },
       });
       if (result.status === "reverted") throw new Error(result.error);
+      // "unresolved" already left the "still confirming" pending toast in place
+      // (via onUnresolved) — only a real confirmation earns the success toast,
+      // otherwise the background poll above will resolve it later.
+      if (toastId && result.status === "confirmed") {
+        pushToast({ kind: "success", label, detail: "Confirmed", sig, erFqdn }, toastId);
+      }
       return sig;
     } catch (error) {
       throw new Error(await transactionErrorMessage(error, connection));
@@ -50,9 +56,7 @@ export async function sendSessionTx(
   if (opts.quiet) return run();
   const toastId = pushToast({ kind: "pending", label, detail: "Sending…" });
   try {
-    const sig = await run(toastId);
-    pushToast({ kind: "success", label, detail: "Confirmed", sig, erFqdn }, toastId);
-    return sig;
+    return await run(toastId);
   } catch (error) {
     pushToast({ kind: "error", label, detail: error instanceof Error ? error.message : String(error) }, toastId);
     throw error;

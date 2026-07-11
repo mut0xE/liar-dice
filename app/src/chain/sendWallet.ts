@@ -34,7 +34,10 @@ export async function sendWalletTx(
       },
     });
     if (result.status === "reverted") throw new Error(result.error);
-    pushToast({ kind: "success", label, detail: "Confirmed", sig }, toastId);
+    // "unresolved" already left the "still confirming" pending toast in place
+    // (via onUnresolved) — only a real confirmation earns the success toast,
+    // otherwise the background poll above will resolve it later.
+    if (result.status === "confirmed") pushToast({ kind: "success", label, detail: "Confirmed", sig }, toastId);
     return sig;
   } catch (error) {
     const msg = await transactionErrorMessage(error, connection);
