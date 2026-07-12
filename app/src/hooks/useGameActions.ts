@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BN } from "@coral-xyz/anchor";
 import { LAMPORTS_PER_SOL, Transaction } from "@solana/web3.js";
-import { useConnection } from "@solana/wallet-adapter-react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
 import { programOn } from "../chain/program";
 import { gamePda, vaultPda, handPda } from "../chain/pdas";
@@ -26,6 +26,10 @@ import { teeValidator } from "../chain/connection";
 export function useGameActions() {
   const { connection } = useConnection();
   const wallet = useAnchorWallet();
+  // sendWalletTx needs the raw adapter's sendTransaction (sign + broadcast in one
+  // step) for single-signer txs — the Anchor-shaped wallet above only exposes
+  // signTransaction, which is what the co-signed flows in chain/enter.ts still use.
+  const { sendTransaction } = useWallet();
   const [busy, setBusy] = useState<string | null>(null);
 
   const create = async (feeSol: number, graceSeconds: number): Promise<string> => {
@@ -116,7 +120,7 @@ export function useGameActions() {
         validatorIdentity: identity,
       });
       const tx = new Transaction().add(startIx, delegateGameIx);
-      await sendWalletTx(connection, wallet, tx, { label: "Start + delegate game" });
+      await sendWalletTx(connection, { publicKey: me, sendTransaction }, tx, { label: "Start + delegate game" });
       return g.pubkey.toBase58();
     } finally {
       setBusy(null);
@@ -140,7 +144,7 @@ export function useGameActions() {
         vault: vaultPda(g.pubkey),
         players: g.players,
       });
-      await sendWalletTx(connection, wallet, tx, { label: "Cancel game & refund crew" });
+      await sendWalletTx(connection, { publicKey: wallet.publicKey, sendTransaction }, tx, { label: "Cancel game & refund crew" });
     } finally {
       setBusy(null);
     }

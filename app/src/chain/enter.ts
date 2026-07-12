@@ -1,4 +1,12 @@
-import { Connection, Keypair, PublicKey, SystemProgram, Transaction, TransactionInstruction } from "@solana/web3.js";
+import {
+  Connection,
+  Keypair,
+  PublicKey,
+  SystemProgram,
+  TransactionInstruction,
+  TransactionMessage,
+  VersionedTransaction,
+} from "@solana/web3.js";
 import type { Wallet } from "@coral-xyz/anchor/dist/cjs/provider";
 import { programOn } from "./program";
 import { handPda, permissionPda, sessionTokenPda } from "./pdas";
@@ -105,19 +113,18 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
   // Skip delegate_hand if already delegated, so resuming doesn't re-popup.
   status("Checking hand delegation…");
   const handDelegated = await isAccountDelegated(hand);
-  const enterTx = new Transaction();
-  if (ctx.prependIxs?.length) enterTx.add(...ctx.prependIxs);
+  const instructions: TransactionInstruction[] = [...(ctx.prependIxs ?? [])];
   if (!handDelegated) {
     status("Delegating your hand to the rollup…");
     // Top up before delegating — after delegation, base-layer top-ups no longer reach the ER clone.
-    enterTx.add(
+    instructions.push(
       SystemProgram.transfer({
         fromPubkey: wallet.publicKey,
         toPubkey: hand,
         lamports: EXTRA_PERMISSION_MEMBER_RENT,
       })
     );
-    enterTx.add(
+    instructions.push(
       await buildDelegateHandIx(baseProgram, {
         player: wallet.publicKey,
         host: game.host,
@@ -140,7 +147,7 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
     if (isRefresh) {
       status("Refreshing expired session key…");
       detail("session key expired — minting a fresh one");
-      enterTx.add(
+      instructions.push(
         await buildRevokeSessionIx(manager, {
           sessionToken,
           authority: wallet.publicKey,
@@ -148,7 +155,7 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
         })
       );
     }
-    enterTx.add(
+    instructions.push(
       await buildCreateSessionIx(manager, {
         targetProgram: baseProgram.programId,
         sessionSigner: session.publicKey,
@@ -157,11 +164,24 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
     );
   }
 
-  if (enterTx.instructions.length > 0) {
-    enterTx.feePayer = wallet.publicKey;
-    enterTx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+  if (instructions.length > 0) {
+    // A versioned tx, not a legacy Transaction: Mobile Wallet Adapter serializes
+    // whatever we hand it (with `requireAllSignatures: true`) BEFORE it ever
+    // reaches the wallet app, just to build the wire payload — on a legacy
+    // Transaction that throws "Missing signature for public key" for the
+    // fee payer's own not-yet-filled slot, since nobody has signed it yet at
+    // that point. VersionedTransaction.serialize() never validates signatures,
+    // so the same co-signed tx that works on desktop extensions also works
+    // through the mobile round trip.
+    const { blockhash } = await connection.getLatestBlockhash();
+    const message = new TransactionMessage({
+      payerKey: wallet.publicKey,
+      recentBlockhash: blockhash,
+      instructions,
+    }).compileToV0Message();
+    const enterTx = new VersionedTransaction(message);
     // If we're creating a session, the granted key co-signs its own creation.
-    if (!tokenUsable) enterTx.partialSign(session);
+    if (!tokenUsable) enterTx.sign([session]);
     const label = !tokenUsable
       ? isRefresh
         ? "Refresh session key"
@@ -170,12 +190,9 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
     await withTxToast(label, async () => {
       try {
         const signed = await wallet.signTransaction(enterTx);
-        // Mobile Wallet Adapter round-trips the tx through the wallet app and can
-        // come back with the session co-signer's slot dropped/zeroed even though
-        // it was set via partialSign() above — reapply it on the returned object
-        // so a signature that survived fine on desktop extensions doesn't vanish
-        // on mobile ("Missing signature for public key <session>").
-        if (!tokenUsable) signed.partialSign(session);
+        // Cheap insurance: re-sign our own slot in case the wallet round trip
+        // reconstructed the transaction and dropped it.
+        if (!tokenUsable) signed.sign([session]);
         const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
         await connection.confirmTransaction(sig, "confirmed");
         return sig;
