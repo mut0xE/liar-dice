@@ -259,3 +259,11 @@ export async function resolveGameplayEndpoint(
   const { fqdn } = await gameplayConnectionFor([game, hand]);
   return { fqdn: normalizeErEndpoint(fqdn) };
 }
+
+// Same idea as `resolveGameplayEndpoint`, but for a spectator who has no hand of
+// their own — only the shared Game PDA needs to be delegated for them to watch.
+export async function resolveSpectateEndpoint(game: PublicKey): Promise<{ fqdn: string }> {
+  await waitForDelegation(game, "Game");
+  const { fqdn } = await gameplayConnectionFor([game]);
+  return { fqdn: normalizeErEndpoint(fqdn) };
+}

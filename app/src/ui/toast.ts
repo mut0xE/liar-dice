@@ -50,7 +50,7 @@ export function pushToast(t: Omit<Toast, "id">, id?: number): number {
   emit();
   // success/error auto-dismiss; pending sticks until updated.
   if (t.kind !== "pending") {
-    setTimeout(() => dismissToast(tid), 7000);
+    setTimeout(() => dismissToast(tid), 3000);
   }
   return tid;
 }

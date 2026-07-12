@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Keypair, LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js";
+import { Keypair, PublicKey } from "@solana/web3.js";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { useAnchorWallet } from "../wallet/useAnchorWallet";
 import { useWalletStatus } from "../wallet/useWalletStatus";
@@ -26,6 +26,8 @@ import { sendSessionTx } from "../chain/sendSession";
 import { validateBid, countFace, dieMatches } from "../chain/bidRules";
 import { avatarPos } from "../ui/avatar";
 import { copyAddress } from "../ui/format";
+import { MISS_LIMIT, short, playerName, sol, enumKey, useCountdown, BidBadge } from "../ui/tableDisplay";
+import { SpectateTable } from "./SpectateTable";
 
 type Ready = {
   session: Keypair;
@@ -44,39 +46,6 @@ type RoundResult = {
   reveals: any[];
 };
 
-// Mirrors `MISS_LIMIT` in the on-chain program (state.rs): a seat that misses this
-// many rolling phases IN A ROW is eliminated; earlier misses are just strikes.
-const MISS_LIMIT = 2;
-
-const short = (k: PublicKey) => k.toBase58().slice(0, 4) + "…" + k.toBase58().slice(-4);
-
-// A player's label for showdown/result text: "You" for the local wallet, otherwise
-// the player's wallet address (shortened). Never a raw seat number.
-const playerName = (idx: number, players: PublicKey[], me: PublicKey) => {
-  const p = players[idx];
-  if (!p) return "Player";
-  return p.equals(me) ? "You" : short(p);
-};
-const sol = (n: number) => (n / LAMPORTS_PER_SOL).toFixed(3);
-
-function enumKey(v: Record<string, unknown> | string | undefined, fallback = ""): string {
-  if (!v) return fallback;
-  return typeof v === "string" ? v.toLowerCase() : Object.keys(v)[0] ?? fallback;
-}
-
-function useCountdown(deadline?: number): { label: string; left: number | null } {
-  const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
-  useEffect(() => {
-    const id = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 1000);
-    return () => clearInterval(id);
-  }, []);
-  if (!deadline) return { label: "--", left: null };
-  const left = Math.max(0, deadline - now);
-  const m = Math.floor(left / 60);
-  const s = left % 60;
-  return { label: `${m}:${s.toString().padStart(2, "0")}`, left };
-}
-
 export function GameTable({
   game,
   onExit,
@@ -91,8 +60,13 @@ export function GameTable({
   const [status, setStatus] = useState("Preparing table…");
   const [details, setDetails] = useState<string[]>([]);
   const ran = useRef(false);
+  // A wallet that isn't seated at this table never joined it — there's no hand to
+  // delegate or session to open for them, only a game to watch. Route them to the
+  // read-only view before any of the below tries to set up gameplay on their behalf.
+  const isSeated = Boolean(publicKey && game.players.some((p) => p.equals(publicKey)));
 
   useEffect(() => {
+    if (!isSeated) return;
     if (wallet && (!signMessage || !publicKey)) {
       setStatus("This wallet must support message signing for MagicBlock private dice.");
       return;
@@ -115,7 +89,9 @@ export function GameTable({
       setReady({ ...setup, fqdn, validatorIdentity: setup.identity });
       setStatus("Ready.");
     })().catch((e) => setStatus("Error: " + ((e as Error).message ?? String(e))));
-  }, [wallet, signMessage, publicKey, connection, game]);
+  }, [isSeated, wallet, signMessage, publicKey, connection, game]);
+
+  if (!isSeated) return <SpectateTable game={game} me={publicKey!} onExit={onExit} />;
 
   return (
     <main className="screen game-screen">
@@ -1070,19 +1046,6 @@ function GameOverPanel({
       )}
       <button className="btn small ghost full" onClick={onExit} disabled={Boolean(busy)}>Back to Tables</button>
     </>
-  );
-}
-
-// Show a bid as "<count> ×[die]" — quantity as a number, face as a pipped die, so
-// the two numbers never blur together (e.g. "3 × ⚃" instead of "3 x 4").
-function BidBadge({ bid }: { bid: { quantity: number; face: number } | null }) {
-  if (!bid) return <span className="bid-badge muted">none</span>;
-  return (
-    <span className="bid-badge">
-      <strong>{bid.quantity}</strong>
-      <span className="bid-times">×</span>
-      <Dice value={bid.face} mini />
-    </span>
   );
 }
 

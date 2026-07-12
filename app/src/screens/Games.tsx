@@ -225,9 +225,13 @@ export function Games() {
                 <div className="muted bid-line">
                   {g.currentBid ? `Bid: ${g.currentBid.quantity} × ${g.currentBid.face}` : "No bid yet"}
                 </div>
-                {iAmIn && (
+                {iAmIn ? (
                   <button className="btn btn-red btn-sm full" disabled={!!busy} onClick={() => navigate(`/play/${addr}`)}>
                     {yourTurn ? "Your turn — Resume" : "Resume"}
+                  </button>
+                ) : (
+                  <button className="btn btn-blue btn-sm full" disabled={!!busy} onClick={() => navigate(`/play/${addr}`)}>
+                    🔭 Watch
                   </button>
                 )}
               </div>

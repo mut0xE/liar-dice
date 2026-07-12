@@ -1881,6 +1881,24 @@ body::before {
 .status-tag.rolling { color: #a6f27c; border: 1px solid rgba(166, 242, 124, 0.4); }
 .status-tag.ended { color: var(--dim); }
 .status-tag.cancelled { color: #e8a24c; border: 1px solid rgba(232, 162, 76, 0.4); }
+
+/* ── Spectator badge: a lookout's spyglass, not a player's turn indicator — sky
+   blue keeps it visually distinct from the red "live" and gold "your turn" cues. */
+.spectate-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--disp);
+  font-size: 0.68rem;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--sky-1);
+  border: 1px solid rgba(76, 203, 246, 0.4);
+  border-radius: 999px;
+  padding: 3px 10px 2px;
+  background: rgba(76, 203, 246, 0.08);
+  white-space: nowrap;
+}
 .game-card-meta { font-size: 0.85rem; font-weight: 700; color: var(--dim); }
 
 /* ── Result cards: tap to unroll the ship's log ── */
