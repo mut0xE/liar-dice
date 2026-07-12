@@ -19,9 +19,8 @@ type RoundResult = {
   reveals: any[];
 };
 
-// Read-only mirror of GameTable for a wallet that isn't seated at this table. No
-// hand, no session, no delegation — just the reader identity's public reads, so
-// opening a table to watch never asks a bystander to sign anything or spend rent.
+// Read-only mirror of GameTable for a wallet that isn't seated at this table —
+// no hand, no session, no delegation, just public reads.
 export function SpectateTable({
   game,
   me,

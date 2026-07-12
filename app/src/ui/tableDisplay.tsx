@@ -1,14 +1,11 @@
 import { useEffect, useState } from "react";
-import { PublicKey } from "@solana/web3.js";
-import { LAMPORTS_PER_SOL } from "@solana/web3.js";
+import { PublicKey, LAMPORTS_PER_SOL } from "@solana/web3.js";
 import { Dice } from "./Dice";
 
-// Shared between the live table (GameTable) and the read-only spectator view
-// (SpectateTable) so both render identical HUD/bid/timer chrome — a spectator's
-// screen should look like a player's, minus the controls.
+// Shared HUD/bid/timer bits between GameTable and the read-only SpectateTable.
 
-// Mirrors `MISS_LIMIT` in the on-chain program (state.rs): a seat that misses this
-// many rolling phases IN A ROW is eliminated; earlier misses are just strikes.
+// Mirrors `MISS_LIMIT` in the on-chain program (state.rs): consecutive missed
+// rolling phases before a seat is eliminated.
 export const MISS_LIMIT = 2;
 
 export const short = (k: PublicKey) => k.toBase58().slice(0, 4) + "…" + k.toBase58().slice(-4);

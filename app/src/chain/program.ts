@@ -11,9 +11,7 @@ export function programOn(connection: Connection, wallet: AnchorWalletLike): Pro
   return new Program<LiarDice>(idl as unknown as LiarDice, provider);
 }
 
-// Stub wallet for spectator reads: Anchor's Provider needs a wallet-shaped object
-// to construct, but a spectator never sends a transaction — every signing method
-// throws if it's ever accidentally called, instead of silently misbehaving.
+// Stub wallet for spectator reads — signing methods throw if ever called.
 export function readOnlyWallet(): AnchorWalletLike {
   const publicKey = readerIdentity();
   const refuse = () => {

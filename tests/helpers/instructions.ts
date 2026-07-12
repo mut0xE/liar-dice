@@ -162,10 +162,7 @@ export async function buildDelegateAndSession(
   const tx = new Transaction();
   const signers: Keypair[] = [args.player];
 
-  // Delegation is now split: delegate_game (shared PDA) + delegate_hand (own hand).
-  // delegate_game is host-only (payer must equal host), so only bundle it for the
-  // host's call; other players only delegate their own hand. Both instructions are
-  // idempotent on-chain (skip if already delegated).
+  // delegate_game is host-only, so only the host bundles it; everyone delegates their own hand.
   const delegateHandIx = await program.methods
     .delegateHand(args.gameId)
     .accountsPartial({

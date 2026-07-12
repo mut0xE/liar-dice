@@ -265,10 +265,8 @@ describe("liar-dice: reveal stall -> settle_round slashes non-revealer", functio
     const diceBefore = stalled.diceCounts.map((d: number) => d);
     assert.strictEqual(diceBefore[0], diceBefore[1], "both start with equal dice");
 
-    // Wait out the deadline, then anyone settles (host's session key here, no popup).
-    // Past the deadline playerB is both the non-revealer and the losing challenger,
-    // but settle_round only slashes them once for the combined miss (see the
-    // `already_slashed` guard in settle_round.rs) — one die, not two.
+    // playerB is both the non-revealer and the losing challenger, but settle_round
+    // only slashes once for the combined miss (see `already_slashed` in settle_round.rs).
     logSection(`waiting out the ${GRACE_SECONDS}s deadline`);
     const deadline = stalled.actionDeadline.toNumber();
     while (Math.floor(Date.now() / 1000) <= deadline + 1) await sleep(1000);

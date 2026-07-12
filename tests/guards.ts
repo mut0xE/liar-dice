@@ -314,13 +314,9 @@ describe("liar-dice: guard rejections (base layer)", function () {
     const vaultLamports = await connection.getBalance(vault);
     assert.strictEqual(vaultLamports, 0, "vault drained to the players");
 
-    // Hands are closed too, so their rent is reclaimed (base-layer close; the game was
-    // never delegated, so no ER/undelegation is involved).
+    // Hands are closed too, so their rent is reclaimed.
     // for (const p of [host, playerB]) {
-    //   const closed = await waitUntilClosed(
-    //     connection,
-    //     handPda(program.programId, cancelGame, p.publicKey)
-    //   );
+    //   const closed = await waitUntilClosed(connection, handPda(program.programId, cancelGame, p.publicKey));
     //   assert.ok(closed, "hand PDA closed (rent reclaimed)");
     // }
   });

@@ -3,9 +3,8 @@ import { PublicKey } from "@solana/web3.js";
 import { readerErConnection } from "../chain/connection";
 import { programOn, readOnlyWallet } from "../chain/program";
 
-// Same polling/subscription shape as useGameState, but authed with the bundled
-// public reader identity instead of the visitor's wallet — a spectator watches
-// without ever connecting a session or delegating anything of their own.
+// Same as useGameState, but authed with the bundled reader identity instead of
+// the visitor's wallet — a spectator never connects a session of their own.
 export function useSpectateGameState(fqdn: string, gamePubkey: PublicKey) {
   const [game, setGame] = useState<any | null>(null);
   const loadRef = useRef<(() => Promise<void>) | null>(null);

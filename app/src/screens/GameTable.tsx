@@ -64,9 +64,13 @@ export function GameTable({
   // delegate or session to open for them, only a game to watch. Route them to the
   // read-only view before any of the below tries to set up gameplay on their behalf.
   const isSeated = Boolean(publicKey && game.players.some((p) => p.equals(publicKey)));
+  // A game that's already Ended or Cancelled was undelegated back to the base
+  // layer — there's nothing left on MagicBlock to connect to. Trying anyway just
+  // spins "Getting the table ready" forever behind a delegation-timeout error.
+  const isOver = game.status === "Ended" || game.status === "Cancelled";
 
   useEffect(() => {
-    if (!isSeated) return;
+    if (!isSeated || isOver) return;
     if (wallet && (!signMessage || !publicKey)) {
       setStatus("This wallet must support message signing for MagicBlock private dice.");
       return;
@@ -89,9 +93,10 @@ export function GameTable({
       setReady({ ...setup, fqdn, validatorIdentity: setup.identity });
       setStatus("Ready.");
     })().catch((e) => setStatus("Error: " + ((e as Error).message ?? String(e))));
-  }, [isSeated, wallet, signMessage, publicKey, connection, game]);
+  }, [isSeated, isOver, wallet, signMessage, publicKey, connection, game]);
 
   if (!isSeated) return <SpectateTable game={game} me={publicKey!} onExit={onExit} />;
+  if (isOver) return <ResumeGameOverPanel game={game} onExit={onExit} />;
 
   return (
     <main className="screen game-screen">
@@ -103,6 +108,29 @@ export function GameTable({
       ) : (
         <LiveGameTable game={game} ready={ready} onExit={onExit} />
       )}
+    </main>
+  );
+}
+
+function ResumeGameOverPanel({ game, onExit }: { game: GameSummary; onExit: () => void }) {
+  const cancelled = game.status === "Cancelled";
+  return (
+    <main className="screen game-screen">
+      <TableHeader game={game} />
+      <section className="table-action">
+        <h3 className="section-head no-border">{cancelled ? "Table Cancelled" : "Game Over"}</h3>
+        <div className="card compact-card">
+          {cancelled ? (
+            "This table was cancelled — no round was settled."
+          ) : game.winner ? (
+            <>Winner: <span className="mono copyable" onClick={() => copyAddress(game.winner!)}>{short(game.winner)}</span></>
+          ) : (
+            "Winner resolving…"
+          )}
+        </div>
+        <div className="muted">The pot was already settled between the players.</div>
+        <button className="btn small ghost full" onClick={onExit}>Back to Tables</button>
+      </section>
     </main>
   );
 }

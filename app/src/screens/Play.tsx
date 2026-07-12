@@ -4,12 +4,8 @@ import { GameTable } from "./GameTable";
 import { useGames, findGameByAddress } from "../hooks/useGames";
 import { GameSummary } from "../chain/games";
 
-// How long a freshly-opened table gets the benefit of the doubt before we call it
-// "not found". Landing here right after create/join/delegate/start is the common
-// case (WaitingRoom and NewVoyage both navigate straight into Play), and the
-// base+ER account scan this page depends on can lag a few seconds behind a
-// just-confirmed tx — showing "not found" in that window reads as a broken link
-// when it's really just the lobby catching up.
+// A freshly-opened table can lag a few seconds behind a just-confirmed tx before
+// the lobby scan finds it — give it this long before calling it "not found".
 const NOT_FOUND_GRACE_MS = 12_000;
 
 export function Play() {
@@ -33,9 +29,8 @@ export function Play() {
     firstSeenAt.current = Date.now();
   }, [addr]);
 
-  // While still inside the grace window, poll faster than the lobby's normal 10s
-  // cadence and re-render on a tick so the elapsed check below keeps re-evaluating
-  // even when nothing else has changed.
+  // While waiting, poll faster than the lobby's normal cadence and tick a
+  // re-render so the grace-window check below keeps re-evaluating.
   useEffect(() => {
     if (g) return;
     const fast = setInterval(refresh, 1500);

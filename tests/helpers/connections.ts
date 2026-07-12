@@ -154,14 +154,8 @@ export async function waitUntilOwnedBy(
   return false;
 }
 
-// Poll until `account` reads as closed on-chain — mirrors waitUntilOwnedBy but for
-// closes. We treat BOTH "account is gone" (info === null) and "account exists but
-// its lamports were drained to 0" as closed: some RPC providers (Helius included)
-// serve a stale "account still exists" response from a lagging read-replica index
-// for minutes after a zero-lamport account has already been purged from the actual
-// bank, even though the draining transaction itself confirmed instantly. Lamports
-// hitting 0 is the trustworthy signal — it's set atomically inside the closing
-// transaction, so there's nothing to wait for once we observe it.
+// Poll until `account` is closed — treats both "gone" and "lamports drained to 0"
+// as closed, since some RPCs serve a stale "still exists" response for a while.
 export async function waitUntilClosed(
   connection: Connection,
   account: PublicKey,
