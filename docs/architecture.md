@@ -12,71 +12,68 @@ LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL
 
 ## The three pieces
 
-| Piece | What it is | What happens there |
+| Piece | Endpoint | Role |
 |---|---|---|
-| **Base layer** | Solana devnet | Create game, join, delegate, payout |
-| **Router** | `devnet-router.magicblock.app` | Answers one question: "which validator has my game right now?" |
-| **ER / TEE validator** | `devnet-tee.magicblock.app` | Every dice roll, bid, challenge, reveal |
+| **Base layer** | Solana devnet | create, join, delegate, payout |
+| **Router** | `devnet-router.magicblock.app` | one-shot lookup: `getDelegationStatus` → validator `fqdn` |
+| **ER / TEE validator** | `devnet-tee.magicblock.app` | roll, bid, challenge, reveal |
 
-The router is **not** in the gameplay path. The client asks it once
-("where's my game?"), gets back an address, and then talks to that address
-directly for every gameplay move. Think of the router as a phone book, not a
-switchboard.
+Router is not on the gameplay path — queried once, cached, then every
+gameplay tx goes straight to the resolved `fqdn`.
 
 ```mermaid
 flowchart LR
-    Client[Frontend]
-    Base[Base layer]
-    Router[Router]
-    ER[TEE Validator]
+    Client([Frontend])
+    Base[["Base layer<br/>(Solana)"]]
+    Router{{Router}}
+    ER[["TEE Validator<br/>(ER)"]]
 
-    Client -->|"1 setup: create, join, delegate"| Base
-    Client -->|"2 where's my game?"| Router
-    Router -.->|"3 here's the address"| Client
-    Client ==>|"4 every move: roll, bid, challenge, reveal"| ER
-    Base -.delegate.-> ER
-    ER -.commit + payout.-> Base
+    Client -- "1 . create / join / delegate" --> Base
+    Client -- "2 . getDelegationStatus" --> Router
+    Router -- "3 . fqdn" --> Client
+    Client == "4 . roll / bid / challenge / reveal" ==> ER
+    Base -. delegate .-> ER
+    ER -. commit + payout .-> Base
+
+    classDef base fill:#1e3a5f,stroke:#4a90d9,color:#fff
+    classDef er fill:#3d2645,stroke:#b57edc,color:#fff
+    classDef router fill:#2d2d2d,stroke:#888,color:#fff
+    class Base base
+    class ER er
+    class Router router
 ```
 
-## Why it's private (PER)
+## PER (private hands)
 
-This isn't a plain ER — it's a **Private Ephemeral Rollup**. Each player's
-dice live behind a `Permission` account on the validator, so nobody but the
-player (and their session key) can read their own hand. Without this, any
-player could peek at everyone's dice mid-game.
+Standard ER + a `Permission` PDA per hand, gating reads on the TEE validator.
 
-- `init_hand_permission` creates that permission, listing the wallet + the
-  session key as the only two readers.
-- It's created lazily — on the player's very first roll or bid, not at
-  join — so joining a table stays instant no matter how many players.
-- Reading a private hand requires proving you're one of those two readers:
-  sign a message, trade it for a short-lived token, attach the token to the
-  request.
+- `init_hand_permission` — 2 members: wallet + session key. Only reader set.
+- Lazy: created on first roll/bid, not at join — join stays fast.
+- Reads require an auth token: sign a message → trade for token → attach to request.
 
-## Cleanup: what gets closed, what doesn't
+## Cleanup
 
-- **`PlayerHand`** — closed. `close_hand` reclaims its rent back to the
-  player, once the game has `Ended` and the hand is back on base layer.
-- **`Permission` PDA** — **not closed.** It lives on the ER and there's no
-  instruction that closes it. It's dead weight after the game ends (until
-  the ER validator's own state eventually cycles), but nothing reclaims its
-  rent today.
-- **Session keypair** — **not revoked** at game end either. It's only
-  revoked when a *new* one is about to replace an *expired* one (the
-  `isRefresh` path in `enter.ts`). A session key from a finished game just
-  sits unused until its on-chain token expires on its own.
+| Account | Closed? | How |
+|---|---|---|
+| `PlayerHand` | Yes | `close_hand`, after `Ended` + undelegated, rent → player |
+| `Permission` PDA | Yes | `close_hand_permission`, session-signed, on the ER, rent → hand PDA |
+| Session keypair | No | only replaced on expiry (`isRefresh` path, `enter.ts`), never revoked at game end |
 
-Neither is a security hole — a stale permission or an expired session key
-can't be used against you — but if you care about rent, both are currently
-one-way: created, never reclaimed.
+`close_hand_permission` must run **before** `end_game` undelegates the hand —
+once the hand leaves the ER, the permission PDA is unreachable and its rent
+is stuck for good. Two call sites in `GameTable.tsx`:
 
-## Why session keys (no wallet popups mid-game)
+- **Eliminated players** — `settle()` checks if the local seat just lost its
+  last die and, if so, closes its own permission immediately.
+- **The winner** — `payout()` closes its own permission right before firing
+  `end_game`.
 
-A player approves once with their wallet at join time. That approval creates
-a **session key** — a throwaway keypair the app generates locally, backed by
-an on-chain token. From then on, every roll/bid/challenge/reveal is signed
-by that session key instead of the wallet, so there's no popup on every
-single move.
+
+## Session keys
+
+One wallet approval at join creates a session keypair + on-chain token.
+Every roll/bid/challenge/reveal after that signs with the session key —
+no wallet popup per move.
 
 ## Round flow
 
@@ -124,6 +121,7 @@ sequenceDiagram
 | `delegate_hand` / `delegate_game` | Base | Hand over accounts to the ER |
 | `start_game` | Base | Host starts the round loop |
 | `init_hand_permission` | ER | Make a hand private (session-signed) |
+| `close_hand_permission` | ER | Reclaim permission rent, before undelegation (session-signed) |
 | `request_roll` / `consume_roll` | ER | Roll the dice (VRF) |
 | `place_bid` | ER | Submit a bid |
 | `challenge` | ER | Call "Liar!" (session-signed) |

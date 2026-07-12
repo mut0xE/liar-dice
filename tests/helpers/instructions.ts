@@ -163,17 +163,9 @@ export async function buildDelegateAndSession(
   const signers: Keypair[] = [args.player];
 
   // Delegation is now split: delegate_game (shared PDA) + delegate_hand (own hand).
-  // Both are idempotent on-chain (skip if already delegated), so bundling them for
-  // the test's first player mirrors the old combined `delegate`.
-  const delegateGameIx = await program.methods
-    .delegateGame(args.gameId)
-    .accountsPartial({
-      payer: args.player.publicKey,
-      host: args.host,
-      game: args.game,
-      validator: args.validatorIdentity,
-    })
-    .instruction();
+  // delegate_game is host-only (payer must equal host), so only bundle it for the
+  // host's call; other players only delegate their own hand. Both instructions are
+  // idempotent on-chain (skip if already delegated).
   const delegateHandIx = await program.methods
     .delegateHand(args.gameId)
     .accountsPartial({
@@ -184,7 +176,20 @@ export async function buildDelegateAndSession(
       validator: args.validatorIdentity,
     })
     .instruction();
-  tx.add(delegateGameIx, delegateHandIx);
+  if (args.player.publicKey.equals(args.host)) {
+    const delegateGameIx = await program.methods
+      .delegateGame(args.gameId)
+      .accountsPartial({
+        payer: args.player.publicKey,
+        host: args.host,
+        game: args.game,
+        validator: args.validatorIdentity,
+      })
+      .instruction();
+    tx.add(delegateGameIx, delegateHandIx);
+  } else {
+    tx.add(delegateHandIx);
+  }
 
   const sessionToken = sessionTokenPda(
     program.programId,
@@ -225,7 +230,31 @@ export async function buildInitHandPermission(
   const tx = await program.methods
     .initHandPermission()
     .accountsPartial({
-      player: args.player.publicKey,
+      signer: args.player.publicKey,
+      authority: args.player.publicKey,
+      sessionToken: null,
+      playerHand: args.playerHand,
+      permission: args.permission,
+      permissionProgram: PERMISSION_PROGRAM_ID,
+      ephemeralVault: EPHEMERAL_VAULT_ID,
+      magicProgram: MAGIC_PROGRAM_ID,
+    })
+    .transaction();
+  return { tx, signers: [args.player] };
+}
+
+/** Close a hand's permission on the ER, refunding its rent. Must run BEFORE
+ *  the hand is undelegated (end_game) — the permission is unreachable after. */
+export async function buildCloseHandPermission(
+  program: Program<LiarDice>,
+  args: { player: Keypair; playerHand: PublicKey; permission: PublicKey }
+): Promise<Built> {
+  const tx = await program.methods
+    .closeHandPermission()
+    .accountsPartial({
+      signer: args.player.publicKey,
+      authority: args.player.publicKey,
+      sessionToken: null,
       playerHand: args.playerHand,
       permission: args.permission,
       permissionProgram: PERMISSION_PROGRAM_ID,

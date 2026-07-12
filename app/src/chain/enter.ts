@@ -9,7 +9,7 @@ import {
   waitForDelegation,
   waitForErClone,
 } from "./delegation";
-import { buildDelegateHandIx, buildInitHandPermission } from "./builders";
+import { buildDelegateHandIx, buildInitHandPermission, buildCloseHandPermission } from "./builders";
 import { sendSessionTx } from "./sendSession";
 import {
   getOrCreateSessionKey,
@@ -52,6 +52,14 @@ function markPermissionReady(permission: PublicKey): void {
     globalThis.localStorage?.setItem(permissionCacheKey(permission), "1");
   } catch {
     // localStorage is just an idempotency hint; setup is still safe without it.
+  }
+}
+
+function clearPermissionReady(permission: PublicKey): void {
+  try {
+    globalThis.localStorage?.removeItem(permissionCacheKey(permission));
+  } catch {
+    // Same idempotency hint as above; safe to skip if storage is unavailable.
   }
 }
 
@@ -209,6 +217,33 @@ export async function ensureHandPermission(
   );
   await sendSessionTx(erConnection, permTx.sessionSigner, permTx.tx, "Make dice private");
   markPermissionReady(permission);
+}
+
+/**
+ * Reclaim the caller's hand-permission rent on the ER. Must be sent BEFORE the
+ * hand is undelegated (`end_game`'s commit) — once the hand leaves the ER, no
+ * instruction can reach this permission PDA again and its rent is stuck.
+ *
+ * Call this as soon as a player is eliminated (out of dice), or — for the last
+ * player standing — right before the host fires `end_game`. Safe to call more
+ * than once: the on-chain instruction is a no-op if the permission is already
+ * gone, and we clear the "ready" cache hint either way so a stale flag can't
+ * mask a permission that was never actually closed.
+ */
+export async function closeHandPermission(
+  erConnection: Connection,
+  erProgram: ReturnType<typeof programOn>,
+  s: { session: Keypair; authority: PublicKey; sessionToken: PublicKey },
+  hand: PublicKey
+): Promise<void> {
+  const permission = permissionPda(hand);
+  const closeTx = await buildCloseHandPermission(
+    erProgram,
+    { sessionSigner: s.session, authority: s.authority, sessionToken: s.sessionToken },
+    { playerHand: hand, permission }
+  );
+  await sendSessionTx(erConnection, closeTx.sessionSigner, closeTx.tx, "Reclaim dice permission rent");
+  clearPermissionReady(permission);
 }
 
 /**

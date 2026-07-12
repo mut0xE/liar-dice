@@ -13,7 +13,7 @@ import {
   vaultPda,
   permissionPda,
   programIdentityPda,
-  keypairFromEnv,
+  keypairFromEnvOrGenerate,
 } from "./helpers/accounts";
 import {
   routerConnection,
@@ -73,8 +73,8 @@ describe("liar-dice: reveal stall -> settle_round slashes non-revealer", functio
   const gameId = new BN(Date.now());
   const entryFee = new BN(0.001 * LAMPORTS_PER_SOL);
   const GRACE_SECONDS = 6; // short so the test doesn't wait long
-  const hostWallet = keypairFromEnv("HOST_KEY");
-  const bWallet = keypairFromEnv("PLAYER_B_KEY"); // the staller
+  const hostWallet = keypairFromEnvOrGenerate("HOST_KEY");
+  const bWallet = keypairFromEnvOrGenerate("PLAYER_B_KEY"); // the staller
 
   const game = gamePda(program.programId, hostWallet.publicKey, gameId);
   const vault = vaultPda(program.programId, game);
@@ -266,7 +266,9 @@ describe("liar-dice: reveal stall -> settle_round slashes non-revealer", functio
     assert.strictEqual(diceBefore[0], diceBefore[1], "both start with equal dice");
 
     // Wait out the deadline, then anyone settles (host's session key here, no popup).
-    // Past the deadline playerB (non-revealer + losing challenger) drops two dice.
+    // Past the deadline playerB is both the non-revealer and the losing challenger,
+    // but settle_round only slashes them once for the combined miss (see the
+    // `already_slashed` guard in settle_round.rs) — one die, not two.
     logSection(`waiting out the ${GRACE_SECONDS}s deadline`);
     const deadline = stalled.actionDeadline.toNumber();
     while (Math.floor(Date.now() / 1000) <= deadline + 1) await sleep(1000);
@@ -290,8 +292,8 @@ describe("liar-dice: reveal stall -> settle_round slashes non-revealer", functio
     assert.strictEqual(settled.diceCounts[0], diceBefore[0], "host revealed, keeps all dice");
     assert.strictEqual(
       settled.diceCounts[1],
-      diceBefore[1] - 2,
-      "non-revealing challenger loses two dice"
+      diceBefore[1] - 1,
+      "non-revealing challenger is slashed once, not twice"
     );
     assert.strictEqual(settled.isActive[0], true, "host still active");
     assert.strictEqual(settled.isActive[1], true, "playerB still active");

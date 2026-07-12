@@ -6,7 +6,7 @@ import {
   delegationRecordPdaFromDelegatedAccount,
   permissionPdaFromAccount,
 } from "@magicblock-labs/ephemeral-rollups-sdk";
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { SESSION_TOKEN_SEED } from "./session";
 
 // ── Seeds (must mirror programs/liar-dice/src/state.rs) ─────────────────────
@@ -108,4 +108,25 @@ export function keypairFromEnv(envVar: string, fallbackPath?: string): Keypair {
   throw new Error(
     `Missing ${envVar} in env and no fallback keypair path given`
   );
+}
+
+/**
+ * Same as `keypairFromEnv`, but if the env var is unset it generates a fresh
+ * Keypair and persists it to `.env` (same convention as the session keys in
+ * `helpers/session.ts`), instead of throwing. Every later run then reuses the
+ * same key. The caller is responsible for funding a freshly generated key
+ * (e.g. `fundKeypair`) — this only guarantees a usable, stable keypair.
+ */
+export function keypairFromEnvOrGenerate(envVar: string): Keypair {
+  const raw = process.env[envVar];
+  if (raw) {
+    const secret = JSON.parse(raw) as number[];
+    return Keypair.fromSecretKey(Uint8Array.from(secret));
+  }
+  const keypair = Keypair.generate();
+  writeFileSync(".env", `\n${envVar}=[${keypair.secretKey.toString()}]\n`, {
+    flag: "a",
+  });
+  console.log(`[accounts] generated + persisted ${envVar} (added to .env)`);
+  return keypair;
 }

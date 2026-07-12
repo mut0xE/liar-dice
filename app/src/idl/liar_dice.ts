@@ -223,6 +223,153 @@ export type LiarDice = {
       "args": []
     },
     {
+      "name": "closeHandPermission",
+      "docs": [
+        "Close the caller's hand permission on the ER, reclaiming its rent. Must run",
+        "before `end_game` undelegates the hand (see `close_hand_permission` docs)."
+      ],
+      "discriminator": [
+        240,
+        0,
+        159,
+        141,
+        225,
+        99,
+        216,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "The tx signer: the player's wallet OR a session key for `authority`."
+          ],
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "The seat owner (real wallet), not a signer. Used for the hand seeds."
+          ]
+        },
+        {
+          "name": "sessionToken",
+          "docs": [
+            "Optional session token proving `signer` may act for `authority`."
+          ],
+          "optional": true
+        },
+        {
+          "name": "playerHand",
+          "docs": [
+            "The caller's own hand (delegated → owned by this program again on the ER)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  104,
+                  97,
+                  110,
+                  100
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "player_hand.game",
+                "account": "playerHand"
+              },
+              {
+                "kind": "account",
+                "path": "authority"
+              }
+            ]
+          }
+        },
+        {
+          "name": "permission",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  101,
+                  114,
+                  109,
+                  105,
+                  115,
+                  115,
+                  105,
+                  111,
+                  110,
+                  58
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "playerHand"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                136,
+                161,
+                10,
+                196,
+                33,
+                152,
+                1,
+                214,
+                246,
+                106,
+                29,
+                60,
+                6,
+                152,
+                192,
+                102,
+                169,
+                175,
+                212,
+                217,
+                180,
+                252,
+                231,
+                71,
+                151,
+                141,
+                209,
+                5,
+                168,
+                212,
+                103,
+                82
+              ]
+            }
+          }
+        },
+        {
+          "name": "permissionProgram",
+          "address": "ACLseoPoyC3cBqoUtkbjZ4aDrkurZW86v19pXz2XQnp1"
+        },
+        {
+          "name": "ephemeralVault",
+          "writable": true,
+          "address": "MagicVau1t999999999999999999999999999999999"
+        },
+        {
+          "name": "magicProgram",
+          "address": "Magic11111111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "consumeRoll",
       "docs": [
         "VRF callback that writes the rolled dice. Only the VRF program may call it."

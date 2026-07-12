@@ -7,7 +7,7 @@ import { sessionErConnection } from "../chain/connection";
 import { pushToast } from "../ui/toast";
 import { programOn } from "../chain/program";
 import { handPda, vaultPda } from "../chain/pdas";
-import { setUpHand, resolveGameplayEndpoint, ensureHandPermission } from "../chain/enter";
+import { setUpHand, resolveGameplayEndpoint, ensureHandPermission, closeHandPermission } from "../chain/enter";
 import { GameSummary } from "../chain/games";
 import { useGameState } from "../hooks/useGameState";
 import { useMyHand } from "../hooks/useMyHand";
@@ -466,6 +466,21 @@ function LiveGameTable({
       await sendSessionTx(conn, tx.sessionSigner, tx.tx, "Settle round", { quiet: true });
       if (result) setRoundResult(result);
       await handState.refresh();
+      // If settle_round just knocked us out, reclaim our hand-permission rent now —
+      // our hand won't be touched again until end_game undelegates it, at which
+      // point the permission becomes unreachable.
+      if (wallet) {
+        const fresh = await program.account.game.fetch(game.pubkey);
+        const myIdx = (fresh.players as PublicKey[]).findIndex((p) => p.equals(wallet.publicKey));
+        if (myIdx >= 0 && !(fresh.isActive as boolean[])[myIdx]) {
+          await closeHandPermission(
+            conn,
+            program,
+            { session: ready.session, authority: wallet.publicKey, sessionToken: ready.sessionToken },
+            hand
+          ).catch(() => {}); // best-effort cleanup — never block the UI on it
+        }
+      }
     } catch (e) {
       // Another client (or seat) settled first — the desired state was reached, so
       // don't surface a NotSettled/BadGameState error or retry.
@@ -488,6 +503,17 @@ function LiveGameTable({
     const toastId = pushToast({ kind: "pending", label: "Claim prize", detail: "Committing game to base layer…" });
     try {
       const { conn, program } = await withProgram();
+      // Reclaim our own hand-permission rent before end_game undelegates the hand —
+      // after that this permission is unreachable. Only closes the caller's own
+      // (the winner's) permission; other seats close theirs on elimination in `settle`.
+      if (wallet?.publicKey.equals(winner)) {
+        await closeHandPermission(
+          conn,
+          program,
+          { session: ready.session, authority: wallet.publicKey, sessionToken: ready.sessionToken },
+          hand
+        ).catch(() => {}); // best-effort — never block claiming the prize on this
+      }
       const hands = (g.players as PublicKey[]).map((p) => handPda(game.pubkey, p));
       const tx = await buildEndGameSession(program, s, {
         game: game.pubkey,

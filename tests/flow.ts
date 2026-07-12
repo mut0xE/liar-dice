@@ -12,7 +12,7 @@ import {
   vaultPda,
   programIdentityPda,
   permissionPda,
-  keypairFromEnv,
+  keypairFromEnvOrGenerate,
 } from "./helpers/accounts";
 import {
   routerConnection,
@@ -22,6 +22,7 @@ import {
   sleep,
   waitForRoll,
   waitUntilOwnedBy,
+  waitUntilClosed,
 } from "./helpers/connections";
 import {
   Player,
@@ -83,16 +84,32 @@ describe("liar-dice: full success flow", function () {
 
   const gameId = new BN(Date.now());
   const entryFee = new BN(0.001 * LAMPORTS_PER_SOL);
-  const hostWallet = keypairFromEnv("HOST_KEY");
-  const bWallet = keypairFromEnv("PLAYER_B_KEY");
+  // Falls back to a freshly generated + persisted keypair if unset (see
+  // `keypairFromEnvOrGenerate`); `fundKeypair` below tops it up from `wallet` either way.
+  const hostWallet = keypairFromEnvOrGenerate("HOST_KEY");
+  const bWallet = keypairFromEnvOrGenerate("PLAYER_B_KEY");
 
   const game = gamePda(program.programId, hostWallet.publicKey, gameId);
   const vault = vaultPda(program.programId, game);
 
   // The two players. `host` also owns/starts the game. Session keys persist to .env.
   const sp = sessionManager.program.programId;
-  const host = makePlayer(program, game, "host", hostWallet, getHostSessionKeypair(), sp);
-  const playerB = makePlayer(program, game, "playerB", bWallet, getPlayerBSessionKeypair(), sp);
+  const host = makePlayer(
+    program,
+    game,
+    "host",
+    hostWallet,
+    getHostSessionKeypair(),
+    sp
+  );
+  const playerB = makePlayer(
+    program,
+    game,
+    "playerB",
+    bWallet,
+    getPlayerBSessionKeypair(),
+    sp
+  );
   const players = [host, playerB];
 
   // Every PDA this flow touches, for the on-chain snapshot log.
@@ -195,7 +212,10 @@ describe("liar-dice: full success flow", function () {
           validatorIdentity: validator.identity,
         }
       );
-      logTx(`delegate + session (${p.label})`, await sendBuilt(connection, built));
+      logTx(
+        `delegate + session (${p.label})`,
+        await sendBuilt(connection, built)
+      );
     }
 
     // Confirm the game is delegated, then wire up TEE connections.
@@ -241,14 +261,21 @@ describe("liar-dice: full success flow", function () {
     logSection("privacy: host token → host's hand");
     const h = await readHand(host, host.hand);
     if (!h) throw new Error("owner (host) could not read their own hand");
-    console.log(`   ✓  host token → host's hand: READABLE ${diceStr(h.dice, h.diceCount)}`);
+    console.log(
+      `   ✓  host token → host's hand: READABLE ${diceStr(h.dice, h.diceCount)}`
+    );
   });
 
   it("privacy: playerB CAN read playerB's own hand", async () => {
     logSection("privacy: playerB token → playerB's hand");
     const h = await readHand(playerB, playerB.hand);
     if (!h) throw new Error("owner (playerB) could not read their own hand");
-    console.log(`   ✓  playerB token → playerB's hand: READABLE ${diceStr(h.dice, h.diceCount)}`);
+    console.log(
+      `   ✓  playerB token → playerB's hand: READABLE ${diceStr(
+        h.dice,
+        h.diceCount
+      )}`
+    );
   });
 
   it("privacy: host CANNOT read playerB's hand", async () => {
@@ -302,7 +329,10 @@ describe("liar-dice: full success flow", function () {
         const h = await p.tee!.account.playerHand.fetch(p.hand);
         hands.push({ dice: h.dice, diceCount: h.diceCount });
         console.log(
-          `   🔒 ${p.label} sees own dice: ${diceStr(h.dice, h.diceCount)} (hidden from others)`
+          `   🔒 ${p.label} sees own dice: ${diceStr(
+            h.dice,
+            h.diceCount
+          )} (hidden from others)`
         );
       }
 
@@ -333,7 +363,10 @@ describe("liar-dice: full success flow", function () {
           biddingOpened = true;
           bids.push({ label: starter.label, quantity, face });
           console.log(
-            `   - ${starter.label}: "${bidPhrase(quantity, face)}"  (begin_bidding + bid)  ${sig}`
+            `   - ${starter.label}: "${bidPhrase(
+              quantity,
+              face
+            )}"  (begin_bidding + bid)  ${sig}`
           );
           return;
         }
@@ -349,7 +382,9 @@ describe("liar-dice: full success flow", function () {
           })
         );
         bids.push({ label: bidder.label, quantity, face });
-        console.log(`   - ${bidder.label}: "${bidPhrase(quantity, face)}"   ${sig}`);
+        console.log(
+          `   - ${bidder.label}: "${bidPhrase(quantity, face)}"   ${sig}`
+        );
       }
 
       // A different bidding scenario each round, to exercise more code paths.
@@ -377,8 +412,12 @@ describe("liar-dice: full success flow", function () {
         for (const b of chain) await bid(b.quantity, b.face);
         const last = chain[chain.length - 1];
         const bluff = bluffBid(hands, totalDice, last);
-        if (bluff.quantity > last.quantity) await bid(bluff.quantity, bluff.face);
-        else console.log("   (bluff can't out-rank; leaving true bid to challenge)");
+        if (bluff.quantity > last.quantity)
+          await bid(bluff.quantity, bluff.face);
+        else
+          console.log(
+            "   (bluff can't out-rank; leaving true bid to challenge)"
+          );
       }
 
       // challenge — signed by the challenger's SESSION KEY; whoever holds the turn calls liar.
@@ -400,7 +439,10 @@ describe("liar-dice: full success flow", function () {
       for (const p of activePlayers) {
         const sig = await sendTee(
           p,
-          await ix.buildReveal(program, sessionCtx(p), { game, playerHand: p.hand })
+          await ix.buildReveal(program, sessionCtx(p), {
+            game,
+            playerHand: p.hand,
+          })
         );
         logTx(`reveal (${p.label})`, sig, true);
       }
@@ -428,14 +470,20 @@ describe("liar-dice: full success flow", function () {
       const actual = countFace(hands, face);
       const held = actual >= standing.quantity;
       console.log(
-        `- Reveal & count ${faceWord(face)}s: ${perSeat} → actual = ${actual}. ` +
-          `Bid needed ${standing.quantity} → ${held ? "TRUE" : "BLUFF"}.   ${stSig}`
+        `- Reveal & count ${faceWord(
+          face
+        )}s: ${perSeat} → actual = ${actual}. ` +
+          `Bid needed ${standing.quantity} → ${
+            held ? "TRUE" : "BLUFF"
+          }.   ${stSig}`
       );
 
       players.forEach((p, i) => {
         const lost = diceBefore[i] - settled.diceCounts[i];
         if (lost > 0)
-          console.log(`- ${p.label} loses ${lost} ${lost === 1 ? "die" : "dice"}.`);
+          console.log(
+            `- ${p.label} loses ${lost} ${lost === 1 ? "die" : "dice"}.`
+          );
       });
       console.log(`➡️  Score: ${scoreLine(players, [...settled.diceCounts])}`);
     }
@@ -448,7 +496,9 @@ describe("liar-dice: full success flow", function () {
     players.forEach((p, i) => {
       const state = finalGame.isActive[i] ? "still in" : "eliminated";
       console.log(
-        `   ${p.label}: ${finalGame.diceCounts[i]} dice (${state})  wallet ${p.wallet.publicKey.toBase58()}`
+        `   ${p.label}: ${
+          finalGame.diceCounts[i]
+        } dice (${state})  wallet ${p.wallet.publicKey.toBase58()}`
       );
     });
 
@@ -457,6 +507,34 @@ describe("liar-dice: full success flow", function () {
   });
 
   // ── Phase D — atomic commit + undelegate + payout ─────────────────────────
+
+  it("closes the winner's hand permission before end_game undelegates it", async () => {
+    logSection("close_hand_permission: reclaim rent while still on the ER");
+    const g = await publicGame.account.game.fetch(game);
+    const winnerIdx = g.isActive.findIndex((a) => a);
+    const winner = players[winnerIdx];
+    if (!winner)
+      throw new Error("Could not resolve the winning player for this test");
+
+    const permission = permissionPda(winner.hand);
+    const before = await winner.tee!.provider.connection.getAccountInfo(
+      permission
+    );
+    if (!before)
+      throw new Error(
+        "Expected the winner's permission to exist before closing it"
+      );
+
+    const sig = await sendTee(
+      winner,
+      await ix.buildCloseHandPermission(program, {
+        player: winner.wallet,
+        playerHand: winner.hand,
+        permission,
+      })
+    );
+    logTx(`close_hand_permission (${winner.label})`, sig, true);
+  });
 
   it("ends the game: commits + undelegates and pays out atomically", async () => {
     logSection("end_game: ER (delegated) -> base (committed + paid out)");

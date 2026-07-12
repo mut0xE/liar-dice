@@ -146,6 +146,29 @@ export async function buildInitHandPermission(
   return { tx, kind: "session", sessionSigner: s.sessionSigner };
 }
 
+// Reclaims the permission's rent on the ER. Must be sent BEFORE the hand is
+// undelegated (end_game) — once it leaves the ER this can no longer reach it.
+export async function buildCloseHandPermission(
+  program: Program<LiarDice>,
+  s: S,
+  a: { playerHand: PublicKey; permission: PublicKey }
+): Promise<SessionTx> {
+  const tx = await program.methods
+    .closeHandPermission()
+    .accountsPartial({
+      signer: s.sessionSigner.publicKey,
+      authority: s.authority,
+      sessionToken: s.sessionToken,
+      playerHand: a.playerHand,
+      permission: a.permission,
+      permissionProgram: PERMISSION_PROGRAM_ID,
+      ephemeralVault: EPHEMERAL_VAULT_ID,
+      magicProgram: MAGIC_PROGRAM_ID,
+    })
+    .transaction();
+  return { tx, kind: "session", sessionSigner: s.sessionSigner };
+}
+
 export async function buildRequestRoll(
   program: Program<LiarDice>,
   s: S,

@@ -50,6 +50,12 @@ pub mod liar_dice {
         instructions::init_hand_permission::init_hand_permission(ctx)
     }
 
+    /// Close the caller's hand permission on the ER, reclaiming its rent. Must run
+    /// before `end_game` undelegates the hand (see `close_hand_permission` docs).
+    pub fn close_hand_permission(ctx: Context<CloseHandPermission>) -> Result<()> {
+        instructions::close_hand_permission::close_hand_permission(ctx)
+    }
+
     pub fn cancel_game<'info>(ctx: Context<'_, '_, '_, 'info, CancelGame<'info>>) -> Result<()> {
         instructions::cancel_game::cancel_game(ctx)
     }
