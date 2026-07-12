@@ -6,7 +6,7 @@ resolution = true
 skip-lint = false
 
 [programs.devnet]
-liar_dice = "LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL"
+liar_dice = "1iAR1JYBJsjtzS6jSLbUfVbYuBfR88FpxbNPKUE6nLb"
 
 [registry]
 url = "https://api.apr.dev"

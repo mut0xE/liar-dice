@@ -65,7 +65,7 @@ yarn dev
 ## Program ID
 
 ```
-LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL
+1iAR1JYBJsjtzS6jSLbUfVbYuBfR88FpxbNPKUE6nLb
 ```
 
 Deployed to Solana devnet, `[programs.devnet]` in `Anchor.toml`.

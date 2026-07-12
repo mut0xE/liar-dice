@@ -1,7 +1,7 @@
 import { PublicKey } from "@solana/web3.js";
 
 export const PROGRAM_ID = new PublicKey(
-  "LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL"
+  "1iAR1JYBJsjtzS6jSLbUfVbYuBfR88FpxbNPKUE6nLb"
 );
 export const DEVNET_ENDPOINT =
   import.meta.env.VITE_HELIUS_RPC_URL || "https://api.devnet.solana.com";

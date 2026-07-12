@@ -7,7 +7,7 @@ instant, while game setup and the final payout settle on Solana itself.
 ## Program ID
 
 ```
-LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL
+1iAR1JYBJsjtzS6jSLbUfVbYuBfR88FpxbNPKUE6nLb
 ```
 
 ## The three pieces
