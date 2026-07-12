@@ -8,6 +8,7 @@ import { pushToast } from "../ui/toast";
 import { programOn } from "../chain/program";
 import { handPda, vaultPda } from "../chain/pdas";
 import { setUpHand, resolveGameplayEndpoint, ensureHandPermission, closeHandPermission } from "../chain/enter";
+import { isAccountDelegated } from "../chain/delegation";
 import { GameSummary } from "../chain/games";
 import { useGameState } from "../hooks/useGameState";
 import { useMyHand } from "../hooks/useMyHand";
@@ -64,13 +65,29 @@ export function GameTable({
   // delegate or session to open for them, only a game to watch. Route them to the
   // read-only view before any of the below tries to set up gameplay on their behalf.
   const isSeated = Boolean(publicKey && game.players.some((p) => p.equals(publicKey)));
-  // A game that's already Ended or Cancelled was undelegated back to the base
-  // layer — there's nothing left on MagicBlock to connect to. Trying anyway just
-  // spins "Getting the table ready" forever behind a delegation-timeout error.
-  const isOver = game.status === "Ended" || game.status === "Cancelled";
+  // Cancelled games are provably never delegated (cancel_game only runs on a
+  // Waiting table) — always safe to show the static summary, no ER round trip.
+  // Ended is ambiguous: `settle_round` flips status to Ended WHILE STILL ON THE
+  // ER, before the winner has claimed — end_game (the claim) is what commits +
+  // undelegates it. Skipping straight to a static summary there would hide the
+  // Claim Prize button for a winner who hasn't claimed yet. So for Ended we check
+  // the actual on-chain delegation state before deciding.
+  const [endedStillOnEr, setEndedStillOnEr] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (game.status !== "Ended") return;
+    let cancelled = false;
+    isAccountDelegated(game.pubkey).then((delegated) => {
+      if (!cancelled) setEndedStillOnEr(delegated);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [game.status, game.pubkey]);
+  const checkingEnded = game.status === "Ended" && endedStillOnEr === null;
+  const isStaleOver = game.status === "Cancelled" || (game.status === "Ended" && endedStillOnEr === false);
 
   useEffect(() => {
-    if (!isSeated || isOver) return;
+    if (!isSeated || checkingEnded || isStaleOver) return;
     if (wallet && (!signMessage || !publicKey)) {
       setStatus("This wallet must support message signing for MagicBlock private dice.");
       return;
@@ -93,17 +110,17 @@ export function GameTable({
       setReady({ ...setup, fqdn, validatorIdentity: setup.identity });
       setStatus("Ready.");
     })().catch((e) => setStatus("Error: " + ((e as Error).message ?? String(e))));
-  }, [isSeated, isOver, wallet, signMessage, publicKey, connection, game]);
+  }, [isSeated, checkingEnded, isStaleOver, wallet, signMessage, publicKey, connection, game]);
 
   if (!isSeated) return <SpectateTable game={game} me={publicKey!} onExit={onExit} />;
-  if (isOver) return <ResumeGameOverPanel game={game} onExit={onExit} />;
+  if (isStaleOver) return <ResumeGameOverPanel game={game} onExit={onExit} />;
 
   return (
     <main className="screen game-screen">
-      {!ready ? (
+      {checkingEnded || !ready ? (
         <>
           <TableHeader game={game} />
-          <SetupPanel status={status} details={details} />
+          <SetupPanel status={checkingEnded ? "Checking table status…" : status} details={details} />
         </>
       ) : (
         <LiveGameTable game={game} ready={ready} onExit={onExit} />
