@@ -1202,9 +1202,28 @@ body::before {
 }
 .toast-close:hover { color: var(--fg); }
 
+/* Below ~640px, screens/dialogs run full-width, so a top-right stack lands
+   directly on top of them. Anchor to the bottom instead — clear of any header
+   or panel title, and the dismiss tap stays in thumb reach. */
+@media (max-width: 640px) {
+  .toaster {
+    top: auto;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+    left: 12px;
+    right: 12px;
+    width: auto;
+    align-items: stretch;
+  }
+  .toast { animation-name: toast-in-mobile; }
+}
+
 @keyframes toast-in {
   from { opacity: 0; transform: translateX(18px); }
   to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-in-mobile {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 @keyframes toast-spin {
   to { transform: rotate(360deg); }

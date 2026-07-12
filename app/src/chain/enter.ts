@@ -170,6 +170,12 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
     await withTxToast(label, async () => {
       try {
         const signed = await wallet.signTransaction(enterTx);
+        // Mobile Wallet Adapter round-trips the tx through the wallet app and can
+        // come back with the session co-signer's slot dropped/zeroed even though
+        // it was set via partialSign() above — reapply it on the returned object
+        // so a signature that survived fine on desktop extensions doesn't vanish
+        // on mobile ("Missing signature for public key <session>").
+        if (!tokenUsable) signed.partialSign(session);
         const sig = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
         await connection.confirmTransaction(sig, "confirmed");
         return sig;
