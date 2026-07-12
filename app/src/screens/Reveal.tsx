@@ -47,7 +47,6 @@ export function Reveal({
     return { conn, program: programOn(conn, wallet!) };
   };
 
-  // reveal my hand once
   useEffect(() => {
     if (!wallet || !publicKey || revealed.current) return;
     revealed.current = true;
@@ -59,7 +58,6 @@ export function Reveal({
     })().catch((e) => setStatus("Error: " + (e as Error).message));
   }, [wallet, publicKey]);
 
-  // once everyone has revealed, anyone may settle
   const settle = async () => {
     setSettleError(null);
     setBusy(true);

@@ -6,10 +6,8 @@ import { handPda, sessionTokenPda } from "./accounts";
 import { authedErConnection, erProgramOn, sendBuilt } from "./connections";
 import { Built } from "./instructions";
 
-// One player. Compare to the raffle test:
-//   wallet  = player1            (real wallet: money + identity)
-//   session = gameplay signer    (signs moves on the ER, no wallet popups)
-//   tee     = teeProviderPlayer1 (this player's OWN private TEE connection)
+// One player: wallet is the real identity, session signs moves on the ER (no popups),
+// tee is this player's own private TEE connection.
 export type Player = {
   label: string;
   wallet: Keypair;

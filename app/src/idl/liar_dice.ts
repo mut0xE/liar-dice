@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/liar_dice.json`.
  */
 export type LiarDice = {
-  "address": "4Q9UvCjAeKP8xRBLNoSx3ZCp4vmrGXpKcZ1td3RRbzMN",
+  "address": "LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL",
   "metadata": {
     "name": "liarDice",
     "version": "0.1.0",
@@ -354,13 +354,18 @@ export type LiarDice = {
         {
           "name": "payer",
           "docs": [
-            "Whoever pays for the delegation (the host, in the start_game tx)."
+            "Whoever pays for the delegation. Must be the host — otherwise anyone could",
+            "delegate a still-`Waiting` game to the ER ahead of `start_game`, freezing",
+            "`join_game` for that table (it requires a base-layer-owned `Game` account)."
           ],
           "writable": true,
           "signer": true
         },
         {
-          "name": "host"
+          "name": "host",
+          "docs": [
+            "against `payer` above rather than being a signer itself."
+          ]
         },
         {
           "name": "bufferGame",
@@ -386,38 +391,38 @@ export type LiarDice = {
             "program": {
               "kind": "const",
               "value": [
-                50,
-                129,
-                2,
-                94,
-                236,
-                28,
-                86,
-                255,
-                214,
-                19,
-                250,
-                231,
-                240,
-                215,
-                20,
-                31,
-                196,
                 5,
-                32,
-                39,
-                7,
-                65,
-                178,
-                120,
-                104,
-                201,
-                103,
-                180,
-                81,
-                64,
+                13,
+                13,
+                226,
+                70,
+                136,
+                213,
+                105,
+                217,
+                236,
+                16,
+                88,
+                50,
                 60,
-                241
+                104,
+                31,
+                0,
+                203,
+                3,
+                57,
+                199,
+                184,
+                170,
+                208,
+                224,
+                144,
+                27,
+                120,
+                60,
+                239,
+                215,
+                9
               ]
             }
           }
@@ -524,7 +529,7 @@ export type LiarDice = {
         },
         {
           "name": "ownerProgram",
-          "address": "4Q9UvCjAeKP8xRBLNoSx3ZCp4vmrGXpKcZ1td3RRbzMN"
+          "address": "LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL"
         },
         {
           "name": "delegationProgram",
@@ -620,38 +625,38 @@ export type LiarDice = {
             "program": {
               "kind": "const",
               "value": [
-                50,
-                129,
-                2,
-                94,
-                236,
-                28,
-                86,
-                255,
-                214,
-                19,
-                250,
-                231,
-                240,
-                215,
-                20,
-                31,
-                196,
                 5,
-                32,
-                39,
-                7,
-                65,
-                178,
-                120,
-                104,
-                201,
-                103,
-                180,
-                81,
-                64,
+                13,
+                13,
+                226,
+                70,
+                136,
+                213,
+                105,
+                217,
+                236,
+                16,
+                88,
+                50,
                 60,
-                241
+                104,
+                31,
+                0,
+                203,
+                3,
+                57,
+                199,
+                184,
+                170,
+                208,
+                224,
+                144,
+                27,
+                120,
+                60,
+                239,
+                215,
+                9
               ]
             }
           }
@@ -758,7 +763,7 @@ export type LiarDice = {
         },
         {
           "name": "ownerProgram",
-          "address": "4Q9UvCjAeKP8xRBLNoSx3ZCp4vmrGXpKcZ1td3RRbzMN"
+          "address": "LiardgANuvDi5koHS7eAX9AB9egH2STFLyD8sbBueNL"
         },
         {
           "name": "delegationProgram",

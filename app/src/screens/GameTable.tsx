@@ -276,9 +276,7 @@ function LiveGameTable({
     return { conn, program: programOn(conn, wallet!) };
   };
 
-  // Refetch game state a few times right after an action lands. The ER usually
-  // reflects the write within a couple hundred ms, so this beats the 2s poll
-  // and the account-change ws — the source of the "bid feels stuck" lag.
+  // Refetch a few times right after an action lands, faster than the 2s poll.
   const pullSoon = () => {
     [150, 500, 1100].forEach((ms) => setTimeout(() => { void refreshGame(); }, ms));
   };
@@ -486,11 +484,7 @@ function LiveGameTable({
     if (!winner) return;
     setBusy("payout");
     setTxError(null);
-    // end_game runs `payout` as a base-layer Magic Action, so the SOL actually moves
-    // in a SEPARATE L1 tx. The ER (PER) tx is the one we actually control and can
-    // confirm immediately, so it's the real proof-of-payout — the base-layer
-    // signature is a much slower (sometimes minutes-long) lookup of the same
-    // payout and isn't worth blocking or alerting the player on.
+    // Payout moves via a separate L1 Magic Action tx; the ER tx confirms fast and is proof enough.
     const toastId = pushToast({ kind: "pending", label: "Claim prize", detail: "Committing game to base layer…" });
     try {
       const { conn, program } = await withProgram();
@@ -549,9 +543,7 @@ function LiveGameTable({
     if (actedTurn !== null && g != null && Number(g.currentTurn) !== actedTurn) setActedTurn(null);
   }, [g, actedTurn]);
 
-  // Safety valve: if the turn never moves off us (e.g. an ER tx was dropped and
-  // never landed), don't leave the button stuck on "Bid placed" forever. Release
-  // the lock after a few seconds so the player can re-submit instead of freezing.
+  // Safety valve: release the "Bid placed" lock after a few seconds in case the tx never lands.
   useEffect(() => {
     if (actedTurn === null) return;
     const t = setTimeout(() => setActedTurn(null), 7000);
@@ -572,8 +564,7 @@ function LiveGameTable({
       setHistory((prev) => [snap, ...prev].slice(0, 12));
       setRoundResult(snap);
       pendingShowdown.current = null;
-      // Every client sees the settle land (settle itself is sent quietly and only
-      // one seat's tx wins the race, so a toast there would miss most players).
+      // Toast here, not on settle itself — only one seat's settle tx wins the race.
       const winnerIdx = snap.bidHeld ? snap.bid.bidder : snap.challenger;
       pushToast({
         kind: "success",
@@ -583,12 +574,8 @@ function LiveGameTable({
     }
   }, [g, phase, allRevealed, round]);
 
-  // Drive the round into bidding automatically. begin_bidding only flips the phase
-  // when EVERY active player has rolled (or the window expired and no-shows are
-  // struck), so bidding inputs never appear until all dice are in. It runs once we've
-  // rolled AND — critically — once the on-chain roll deadline has passed even if WE
-  // never rolled, so no-shows always get struck/force-quit from live chain state
-  // instead of waiting on some other client to do it.
+  // Drive into bidding once we've rolled, or once the roll deadline passes even if we haven't
+  // (so no-shows get struck from live chain state instead of waiting on another client).
   useEffect(() => {
     if (phase !== "rolling" || (!rolledThisRound && !deadlinePassed)) return;
     autoBegin();

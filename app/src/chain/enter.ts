@@ -94,17 +94,14 @@ export async function setUpHand(ctx: Ctx): Promise<HandSetup> {
 
   const baseProgram = programOn(connection, wallet);
 
-  // Only include delegate_hand if the hand is still on base (resume-safe: no popup
-  // for an already-delegated hand).
+  // Skip delegate_hand if already delegated, so resuming doesn't re-popup.
   status("Checking hand delegation…");
   const handDelegated = await isAccountDelegated(hand);
   const enterTx = new Transaction();
   if (ctx.prependIxs?.length) enterTx.add(...ctx.prependIxs);
   if (!handDelegated) {
     status("Delegating your hand to the rollup…");
-    // Top up the hand PDA for the session-key permission member BEFORE delegating,
-    // so the lamports travel onto the ER with the hand (see note above). Must precede
-    // the delegate ix — once delegated, base-layer top-ups no longer reach the ER clone.
+    // Top up before delegating — after delegation, base-layer top-ups no longer reach the ER clone.
     enterTx.add(
       SystemProgram.transfer({
         fromPubkey: wallet.publicKey,

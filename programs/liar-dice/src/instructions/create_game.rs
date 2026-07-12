@@ -15,7 +15,6 @@ pub fn create_game(
     // A non-positive grace period would make every move instantly time out.
     require!(timeout_grace > 0, LiarDiceError::InvalidTimeout);
 
-    // Initialize the table empty; players and pot fill in as they join.
     ctx.accounts.game.set_inner(Game {
         host: ctx.accounts.host.key(),
         game_id,

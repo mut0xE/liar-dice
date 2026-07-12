@@ -10,13 +10,7 @@ use crate::errors::LiarDiceError;
 use crate::state::*;
 
 /// Make the caller's hand private on the ER (once, right after `delegate`).
-/// Creates an owner-only ephemeral permission so opponents can't read the dice.
-/// The hand PDA pays (from rent pre-funded in `join_game`); idempotent if it already exists.
-///
-/// Session-key aware: `signer` may be the player's wallet OR a session key for
-/// `authority`. This lets the frontend submit it over the ER with the session key
-/// (no wallet pop-up / network-mismatch prompt). The permission member is always
-/// resolved from `authority`, never the signer.
+/// Session-key aware: the permission member is resolved from `authority`, never `signer`.
 #[session_auth_or(
     ctx.accounts.authority.key() == ctx.accounts.signer.key(),
     LiarDiceError::Unauthorized

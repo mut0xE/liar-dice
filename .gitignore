@@ -6,8 +6,6 @@ node_modules
 test-ledger
 .yarn
 
-# Working notes stay local; the polished architecture docs are committed.
-**/docs
 .claude
 CLAUDE.md
 
@@ -16,6 +14,6 @@ app/dist/
 app/tsconfig.tsbuildinfo
 app/src/**/*.js
 
-# local env (contains reader secret / RPC keys)
+# local env
 .env
 .env.local

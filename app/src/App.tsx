@@ -8,6 +8,7 @@ import { NewVoyage } from "./screens/NewVoyage";
 import { WaitingRoom } from "./screens/WaitingRoom";
 import { Play } from "./screens/Play";
 import { WalletButton } from "./wallet/WalletButton";
+import { HelpButton } from "./ui/HelpButton";
 import { Toaster } from "./ui/Toaster";
 
 export function App() {
@@ -61,7 +62,10 @@ function AppHeader() {
       ) : (
         <span />
       )}
-      <WalletButton />
+      <div className="header-right">
+        {!atHome && <HelpButton />}
+        <WalletButton />
+      </div>
     </header>
   );
 }

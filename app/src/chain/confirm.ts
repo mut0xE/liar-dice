@@ -23,11 +23,7 @@ export type ConfirmOpts = {
   onResolvedInBackground?: (result: { status: "confirmed" } | { status: "reverted"; error: string }) => void;
 };
 
-// Generalizes the "fire tx, wait a bit, degrade to a background poll instead of
-// hanging forever" pattern that used to be hand-rolled only in GameTable's
-// payout flow. Every caller that confirms a landed signature can use this so a
-// slow/unreachable RPC degrades to a clear "still confirming" signal instead of
-// blocking the UI indefinitely.
+// Fires a tx, waits briefly, then degrades to a background poll instead of hanging forever.
 export async function confirmWithFallback(opts: ConfirmOpts): Promise<ConfirmResult> {
   const timeoutMs = opts.timeoutMs ?? 15000;
   const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), timeoutMs));
