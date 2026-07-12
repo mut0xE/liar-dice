@@ -6,9 +6,21 @@ import {
   TransactionMessage,
   VersionedTransaction,
 } from "@solana/web3.js";
+import { utils } from "@coral-xyz/anchor";
 import { pushToast } from "../ui/toast";
 import { transactionErrorMessage } from "./txError";
 import { confirmWithFallback } from "./confirm";
+
+// Mobile Wallet Adapter's signAndSendTransaction path returns the signature
+// base64-encoded instead of the base58 every other Solana tool expects
+// (confirmTransaction, getSignatureStatus, explorer links). Base58's alphabet
+// never contains +, /, or = — base64's does, near-certainly, in a 64-byte
+// signature — so that's a reliable tell to re-encode without misreading a
+// signature that was already correct.
+function normalizeSignature(sig: string): string {
+  if (!/[+/=]/.test(sig)) return sig;
+  return utils.bytes.bs58.encode(Buffer.from(sig, "base64"));
+}
 
 // Only for SINGLE-SIGNER (wallet-only) transactions — sendTransaction() signs AND
 // broadcasts in one wallet-app round trip, which is the recommended path on Mobile
@@ -43,7 +55,9 @@ export async function sendWalletTx(
       instructions: tx.instructions,
     }).compileToV0Message();
     const vtx = new VersionedTransaction(message);
-    const sig = await wallet.sendTransaction(vtx, connection, { skipPreflight: opts.skipPreflight ?? false });
+    const sig = normalizeSignature(
+      await wallet.sendTransaction(vtx, connection, { skipPreflight: opts.skipPreflight ?? false })
+    );
     const result = await confirmWithFallback({
       confirm: () => connection.confirmTransaction(sig, "confirmed"),
       onUnresolved: () => pushToast({ kind: "pending", label, detail: "Still confirming — this can take a moment on devnet…" }, toastId),
